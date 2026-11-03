@@ -5,6 +5,7 @@ yarapm predicts the expected score of NBA games from player ratings (RAPM with a
 
 Commands (tools come from `mise.toml`):
 - `mise run test` / `mise run lint` (ruff format, ruff check, ty). CI runs both; keep them passing
+- `uv run python -m yarapm.segments [--season 2026 ...]` builds `out/segments/` (every season with play-by-play by default, ~20s), printing how many games each season keeps and why the rest are dropped
 
 ## Data
 Source data is nba_data's catalog (`https://basketball-data.billmill.org/nba/nba.duckdb`); its data dictionary is `docs/DATA_DICTIONARY.md` in https://github.com/llimllib/nba_data (often checked out at `../nba_data`). `yarapm.catalog.connect()` attaches it as `nba`, so source tables are always `nba.<table>`. Filter on `season` whenever you can: other filters read every season's file. What we build goes under `out/` (gitignored), one parquet file per season, via `write_season()` and `read()`.
