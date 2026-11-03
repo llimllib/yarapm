@@ -1,0 +1,372 @@
+"""
+The walk-forward harness: every model and experiment is judged by it.
+
+    uv run python -m yarapm.harness --model home [--cadence weekly|daily]
+        [--season 2021 ...] [--set name=value ...]
+
+For each game day of the test seasons, a model is fit on the games before
+that day and predicts that day's games: each team's expected score. With
+`--cadence weekly`, it's fit on the first game day of each week of the
+season and predicts the week's games, which is enough for tuning; final
+numbers use `daily`.
+
+What a model sees when it's fit is a `History`: the game results and
+segments before the day it's fit on, and nothing else, so it can't use the
+games it's predicting.
+
+Tuning is done on TUNING_SEASONS. HOLDOUT_SEASONS are scored once, with
+every setting fixed (#12): the harness won't run them without
+`--holdout`.
+
+Each run writes its predictions and metrics under out/runs/, tagged with the
+model's settings, and replaces an earlier run with the same model, settings,
+seasons and cadence:
+
+    out/runs/predictions/run=<run_id>/data.parquet
+    out/runs/metrics/run=<run_id>/data.parquet
+
+Metrics are computed for every game and for each phase of the season:
+
+    early          regular season, either team in its first EARLY_GAMES games
+    mid            the rest of the regular season (and the Cup final)
+    post_deadline  regular season after the trade deadline
+    playoffs       play-in and playoffs
+
+Win probability is P(margin > 0) for a normal centered on the predicted
+margin, with a spread of the run's margin RMSE; it's scored with log loss
+and Brier score.
+"""
+
+import argparse
+import hashlib
+import json
+from dataclasses import dataclass
+from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
+from typing import Any, Protocol
+
+import duckdb
+import numpy as np
+import pyarrow as pa
+from scipy.special import ndtr
+
+from yarapm.catalog import OUT, connect, read
+from yarapm.games import load_results
+
+TUNING_SEASONS = (2021, 2022, 2023, 2024)
+HOLDOUT_SEASONS = (2025, 2026)
+
+EARLY_GAMES = 20
+
+TRADE_DEADLINES = {
+    2010: date(2010, 2, 18),
+    2011: date(2011, 2, 24),
+    2012: date(2012, 3, 15),
+    2013: date(2013, 2, 21),
+    2014: date(2014, 2, 20),
+    2015: date(2015, 2, 19),
+    2016: date(2016, 2, 18),
+    2017: date(2017, 2, 23),
+    2018: date(2018, 2, 8),
+    2019: date(2019, 2, 7),
+    2020: date(2020, 2, 6),
+    2021: date(2021, 3, 25),
+    2022: date(2022, 2, 10),
+    2023: date(2023, 2, 9),
+    2024: date(2024, 2, 8),
+    2025: date(2025, 2, 6),
+    2026: date(2026, 2, 5),
+}
+
+
+@dataclass(frozen=True)
+class Game:
+    """A game to predict, from `team_id`'s side (the home team's, if any)"""
+
+    game_id: str
+    season: int
+    game_date: date
+    game_type: str
+    team_id: str
+    opp_team_id: str
+    home: bool | None  # None at a neutral site
+
+
+class History:
+    """
+    What a model may use when it's fit: everything before `cutoff`. Every
+    table a model reads goes through here, filtered on `game_date`
+    """
+
+    def __init__(self, con: duckdb.DuckDBPyConnection, cutoff: date):
+        self.con = con
+        self.cutoff = cutoff
+
+    def _before(self, table: str) -> duckdb.DuckDBPyRelation:
+        return self.con.sql(
+            f"SELECT * FROM {table} WHERE game_date < DATE '{self.cutoff}'"
+        )
+
+    @property
+    def results(self) -> duckdb.DuckDBPyRelation:
+        """`yarapm.games.load_results`' rows: one per game, with both scores"""
+        return self._before("results")
+
+    @property
+    def segments(self) -> duckdb.DuckDBPyRelation:
+        """`yarapm.segments`' rows"""
+        return self._before("all_segments")
+
+
+class Model(Protocol):
+    name: str
+
+    @property
+    def settings(self) -> dict[str, Any]: ...
+
+    def fit(self, history: History) -> None: ...
+
+    def predict(self, games: list[Game]) -> list[tuple[float, float]]:
+        """Each game's expected (points, opponent's points), in order"""
+        ...
+
+
+def fit_days(days: list[date], cadence: str) -> list[list[date]]:
+    """
+    Game days grouped by the fit that predicts them: one a day, or the game
+    days in each week starting from the season's first
+    """
+    if cadence == "daily":
+        return [[d] for d in days]
+    if cadence != "weekly":
+        raise ValueError(f"unknown cadence {cadence!r}")
+    groups: list[list[date]] = []
+    for d in days:
+        if groups and d < groups[-1][0] + timedelta(days=7):
+            groups[-1].append(d)
+        else:
+            groups.append([d])
+    return groups
+
+
+def run_id(model: Model, seasons: list[int], cadence: str) -> str:
+    key = json.dumps([model.name, model.settings, sorted(seasons), cadence])
+    return f"{model.name}-{hashlib.sha1(key.encode()).hexdigest()[:8]}"
+
+
+def run(
+    con: duckdb.DuckDBPyConnection,
+    model: Model,
+    seasons: list[int],
+    cadence: str = "weekly",
+    out: Path = OUT,
+    allow_holdout: bool = False,
+) -> str:
+    """
+    Walk `model` forward through `seasons`, using the temp table `results`
+    and the view `all_segments`, and write its predictions and metrics.
+    Returns the run's id
+    """
+    held = sorted(set(seasons) & set(HOLDOUT_SEASONS))
+    if held and not allow_holdout:
+        raise ValueError(f"{held} are held out until the final evaluation (#12)")
+
+    rows = []
+    for season in sorted(seasons):
+        games = [
+            Game(*r)
+            for r in con.execute(
+                """SELECT game_id, season, game_date, game_type, team_id,
+                    opp_team_id, home FROM results WHERE season = ?
+                ORDER BY game_date, game_id""",
+                [season],
+            ).fetchall()
+        ]
+        days = sorted({g.game_date for g in games})
+        for group in fit_days(days, cadence):
+            model.fit(History(con, group[0]))
+            todo = [g for g in games if g.game_date in group]
+            predicted = model.predict(todo)
+            if len(predicted) != len(todo):
+                raise ValueError(
+                    f"{model.name} predicted {len(predicted)} of {len(todo)} games"
+                )
+            rows += [
+                (g.game_id, pts, opp_pts) for g, (pts, opp_pts) in zip(todo, predicted)
+            ]
+
+    rid = run_id(model, seasons, cadence)
+    con.register(
+        "predicted",
+        pa.table(
+            {
+                "game_id": [r[0] for r in rows],
+                "pred_pts": pa.array([r[1] for r in rows], pa.float64()),
+                "pred_opp_pts": pa.array([r[2] for r in rows], pa.float64()),
+            }
+        ),
+    )
+    con.execute(f"""
+        CREATE OR REPLACE TEMP TABLE predictions AS
+        WITH numbered AS (
+            -- each team's game number in the regular season
+            SELECT game_id, team_id, row_number() OVER (
+                PARTITION BY season, team_id ORDER BY game_date, game_id) AS n
+            FROM (
+                SELECT season, game_id, game_date, team_id FROM results
+                WHERE game_type = 'regular_season'
+                UNION ALL
+                SELECT season, game_id, game_date, opp_team_id FROM results
+                WHERE game_type = 'regular_season'
+            )
+        ), deadlines AS (
+            SELECT * FROM (VALUES {", ".join(f"({s}, DATE '{d}')" for s, d in TRADE_DEADLINES.items())})
+                v(season, deadline)
+        )
+        SELECT '{rid}' AS run_id, r.season, r.game_id, r.game_date, r.game_type,
+            CASE
+                WHEN r.game_type IN ('playoffs', 'play_in') THEN 'playoffs'
+                WHEN r.game_type = 'regular_season'
+                    AND least(t.n, o.n) <= {EARLY_GAMES} THEN 'early'
+                WHEN r.game_type = 'regular_season'
+                    AND r.game_date > d.deadline THEN 'post_deadline'
+                ELSE 'mid'
+            END AS phase,
+            r.team_id, r.opp_team_id, r.home,
+            p.pred_pts, p.pred_opp_pts, r.pts, r.opp_pts
+        FROM predicted p
+        JOIN results r USING (game_id)
+        LEFT JOIN numbered t ON t.game_id = r.game_id AND t.team_id = r.team_id
+        LEFT JOIN numbered o ON o.game_id = r.game_id AND o.team_id = r.opp_team_id
+        LEFT JOIN deadlines d ON d.season = r.season
+        ORDER BY r.game_date, r.game_id
+    """)
+    con.unregister("predicted")
+
+    metrics = score(con.sql("FROM predictions"))
+    created = datetime.now(UTC)
+    for m in metrics:
+        m |= {
+            "run_id": rid,
+            "model": model.name,
+            "settings": json.dumps(model.settings, sort_keys=True),
+            "seasons": sorted(seasons),
+            "cadence": cadence,
+            "created": created,
+        }
+    con.register("scored", pa.Table.from_pylist(metrics))
+    for name, query in [
+        ("predictions", "FROM predictions"),
+        (
+            "metrics",
+            """SELECT run_id, model, settings, seasons, cadence, created,
+                * EXCLUDE (run_id, model, settings, seasons, cadence, created)
+            FROM scored""",
+        ),
+    ]:
+        path = out / "runs" / name / f"run={rid}" / "data.parquet"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        con.execute(f"COPY ({query}) TO '{path}' (FORMAT parquet, COMPRESSION zstd)")
+    con.unregister("scored")
+    return rid
+
+
+def score(predictions: duckdb.DuckDBPyRelation) -> list[dict[str, Any]]:
+    """Metrics for every game ("all") and each phase"""
+    cols = predictions.select(
+        "phase, pred_pts, pred_opp_pts, pts, opp_pts"
+    ).fetchnumpy()
+    phase = np.asarray(cols["phase"])
+    pred = np.column_stack([cols["pred_pts"], cols["pred_opp_pts"]]).astype(float)
+    actual = np.column_stack([cols["pts"], cols["opp_pts"]]).astype(float)
+    pred_margin = pred[:, 0] - pred[:, 1]
+    margin = actual[:, 0] - actual[:, 1]
+    sigma = float(np.sqrt(np.mean((pred_margin - margin) ** 2)))
+    win_prob = np.clip(ndtr(pred_margin / max(sigma, 1e-9)), 1e-6, 1 - 1e-6)
+    won = margin > 0
+
+    metrics = []
+    for name in ["all", "early", "mid", "post_deadline", "playoffs"]:
+        i = np.full(len(phase), True) if name == "all" else phase == name
+        if not i.any():
+            continue
+        margin_err = pred_margin[i] - margin[i]
+        total_err = pred[i].sum(axis=1) - actual[i].sum(axis=1)
+        p, y = win_prob[i], won[i]
+        metrics.append(
+            {
+                "phase": name,
+                "games": int(i.sum()),
+                "margin_bias": float(margin_err.mean()),
+                "margin_rmse": float(np.sqrt((margin_err**2).mean())),
+                "margin_mae": float(np.abs(margin_err).mean()),
+                "total_bias": float(total_err.mean()),
+                "total_rmse": float(np.sqrt((total_err**2).mean())),
+                "total_mae": float(np.abs(total_err).mean()),
+                "score_rmse": float(np.sqrt(((pred[i] - actual[i]) ** 2).mean())),
+                "sigma": sigma,
+                "log_loss": float(-(y * np.log(p) + (~y) * np.log(1 - p)).mean()),
+                "brier": float(((p - y) ** 2).mean()),
+            }
+        )
+    return metrics
+
+
+def load(con: duckdb.DuckDBPyConnection, out: Path = OUT) -> None:
+    """The tables `History` reads: `results`, and `all_segments` if built"""
+    load_results(con)
+    if (out / "segments").is_dir():
+        read(con, "segments", out).create_view("all_segments", replace=True)
+
+
+def models() -> dict[str, type]:
+    from yarapm.baselines import HomeCourt
+
+    return {"home": HomeCourt}
+
+
+def setting(text: str) -> tuple[str, Any]:
+    name, _, value = text.partition("=")
+    try:
+        return name, json.loads(value)
+    except json.JSONDecodeError:
+        return name, value
+
+
+def main(argv: list[str] | None = None) -> None:
+    available = models()
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[1])
+    parser.add_argument("--model", required=True, choices=sorted(available))
+    parser.add_argument("--cadence", choices=["weekly", "daily"], default="weekly")
+    parser.add_argument("--season", type=int, action="append")
+    parser.add_argument("--set", type=setting, action="append", default=[])
+    parser.add_argument("--holdout", action="store_true")
+    parser.add_argument("--out", type=Path, default=OUT)
+    args = parser.parse_args(argv)
+
+    con = connect()
+    load(con, args.out)
+    model = available[args.model](**dict(args.set))
+    rid = run(
+        con,
+        model,
+        args.season or list(TUNING_SEASONS),
+        args.cadence,
+        args.out,
+        args.holdout,
+    )
+    print(rid, json.dumps(model.settings))
+    print(
+        con.sql(f"""
+            SELECT phase, games, round(margin_rmse, 2) AS margin_rmse,
+                round(margin_mae, 2) AS margin_mae, round(margin_bias, 2) AS margin_bias,
+                round(total_rmse, 2) AS total_rmse, round(total_bias, 2) AS total_bias,
+                round(score_rmse, 2) AS score_rmse, round(log_loss, 4) AS log_loss,
+                round(brier, 4) AS brier
+            FROM read_parquet('{args.out}/runs/metrics/run={rid}/data.parquet')
+        """)
+    )
+
+
+if __name__ == "__main__":
+    main()

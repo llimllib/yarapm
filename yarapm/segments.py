@@ -34,8 +34,7 @@ a turnover or the last of a trip's made free throws, the other team gets a
 possession at the end of the period. Technical free throws don't start or
 continue a possession.
 
-Games: regular season, play-in, playoffs and the Cup final, with
-`matches_box_score`. The 2020 bubble games are neutral-site.
+Games: those in `yarapm.games` with `matches_box_score`.
 
 Columns, for the offense in the segment:
 
@@ -57,14 +56,9 @@ from pathlib import Path
 import duckdb
 
 from yarapm.catalog import OUT, connect, write_season
+from yarapm.games import games_query
 
 NAME = "segments"
-
-GAME_TYPES = ("regular_season", "play_in", "playoffs", "cup_final")
-
-# games at the 2020 restart in Orlando, listed with home teams, were played
-# with no crowd at a neutral site
-BUBBLE_START = "2020-07-30"
 
 # a player's segments can differ from their plus-minus in game_rotations
 # by this much before the game is dropped: free throws on a substitution's
@@ -78,14 +72,9 @@ POSS_TOLERANCE = 3
 
 def load_sources(con: duckdb.DuckDBPyConnection, season: int) -> None:
     """Temp tables `games`, `rotations`, `events` and `box` for a season."""
-    types = ", ".join(f"'{t}'" for t in GAME_TYPES)
     con.execute(f"""
         CREATE OR REPLACE TEMP TABLE games AS
-        SELECT game_id, game_date, game_type, home_team_id,
-            neutral_site OR game_date >= DATE '{BUBBLE_START}'
-                AND season = 2020 AS neutral
-        FROM nba.games
-        WHERE season = {season} AND game_type IN ({types})
+        {games_query(f"season = {season}")}
     """)
     con.execute(f"""
         CREATE OR REPLACE TEMP TABLE rotations AS
