@@ -1,0 +1,21 @@
+[project]
+name = "yarapm"
+version = "0.1.0"
+description = "NBA game predictions from player ratings (RAPM with a box-score prior)"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "duckdb>=2.0.0",
+    "numpy>=2.5.4",
+    "pyarrow>=26.0.1",
+    "scipy>=1.18.1",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]

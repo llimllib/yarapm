@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      # installs python, uv, ruff and ty from mise.toml
+      - uses: jdx/mise-action@v5
+
+      - name: Test
+        run: mise run test
+
+      - name: Lint
+        run: mise run lint

@@ -1,0 +1,17 @@
+[tools]
+python = "3.14"
+ruff = "latest"
+ty = "latest"
+uv = "latest"
+
+[tasks.test]
+description = "Run the test suite"
+run = "uv run pytest -q --no-header tests"
+
+[tasks.lint]
+description = "Check formatting, lints and types"
+run = [
+  "ruff format --check yarapm tests",
+  "ruff check yarapm tests",
+  "ty check yarapm tests",
+]
