@@ -43,7 +43,7 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, NamedTuple, Protocol
 
 import duckdb
 import numpy as np
@@ -92,6 +92,14 @@ class Game:
     home: bool | None  # None at a neutral site
 
 
+class Prediction(NamedTuple):
+    """A game's expected score, and its possessions if the model has them"""
+
+    pts: float
+    opp_pts: float
+    poss: float | None = None
+
+
 class History:
     """
     What a model may use when it's fit: everything before `cutoff`. Every
@@ -126,8 +134,8 @@ class Model(Protocol):
 
     def fit(self, history: History) -> None: ...
 
-    def predict(self, games: list[Game]) -> list[tuple[float, float]]:
-        """Each game's expected (points, opponent's points), in order"""
+    def predict(self, games: list[Game]) -> list[Prediction]:
+        """Each game's prediction, in order"""
         ...
 
 
@@ -186,14 +194,12 @@ def run(
         for group in fit_days(days, cadence):
             model.fit(History(con, group[0]))
             todo = [g for g in games if g.game_date in group]
-            predicted = model.predict(todo)
+            predicted = [Prediction(*p) for p in model.predict(todo)]
             if len(predicted) != len(todo):
                 raise ValueError(
                     f"{model.name} predicted {len(predicted)} of {len(todo)} games"
                 )
-            rows += [
-                (g.game_id, pts, opp_pts) for g, (pts, opp_pts) in zip(todo, predicted)
-            ]
+            rows += [(g.game_id, *p) for g, p in zip(todo, predicted)]
 
     rid = run_id(model, seasons, cadence)
     con.register(
@@ -203,6 +209,7 @@ def run(
                 "game_id": [r[0] for r in rows],
                 "pred_pts": pa.array([r[1] for r in rows], pa.float64()),
                 "pred_opp_pts": pa.array([r[2] for r in rows], pa.float64()),
+                "pred_poss": pa.array([r[3] for r in rows], pa.float64()),
             }
         ),
     )
@@ -233,7 +240,8 @@ def run(
                 ELSE 'mid'
             END AS phase,
             r.team_id, r.opp_team_id, r.home,
-            p.pred_pts, p.pred_opp_pts, r.pts, r.opp_pts
+            p.pred_pts, p.pred_opp_pts, r.pts, r.opp_pts,
+            p.pred_poss, (r.poss + r.opp_poss) / 2 AS poss
         FROM predicted p
         JOIN results r USING (game_id)
         LEFT JOIN numbered t ON t.game_id = r.game_id AND t.team_id = r.team_id
@@ -274,8 +282,11 @@ def run(
 def score(predictions: duckdb.DuckDBPyRelation) -> list[dict[str, Any]]:
     """Metrics for every game ("all") and each phase"""
     cols = predictions.select(
-        "phase, pred_pts, pred_opp_pts, pts, opp_pts"
+        "phase, pred_pts, pred_opp_pts, pts, opp_pts, "
+        "coalesce(pred_poss, 'nan'::DOUBLE) AS pred_poss, poss"
     ).fetchnumpy()
+    pred_poss = np.asarray(cols["pred_poss"], dtype=float)
+    poss = np.asarray(cols["poss"], dtype=float)
     phase = np.asarray(cols["phase"])
     pred = np.column_stack([cols["pred_pts"], cols["pred_opp_pts"]]).astype(float)
     actual = np.column_stack([cols["pts"], cols["opp_pts"]]).astype(float)
@@ -293,6 +304,8 @@ def score(predictions: duckdb.DuckDBPyRelation) -> list[dict[str, Any]]:
         margin_err = pred_margin[i] - margin[i]
         total_err = pred[i].sum(axis=1) - actual[i].sum(axis=1)
         p, y = win_prob[i], won[i]
+        # NaN for a model that doesn't predict possessions
+        poss_err = pred_poss[i] - poss[i]
         metrics.append(
             {
                 "phase": name,
@@ -304,6 +317,8 @@ def score(predictions: duckdb.DuckDBPyRelation) -> list[dict[str, Any]]:
                 "total_rmse": float(np.sqrt((total_err**2).mean())),
                 "total_mae": float(np.abs(total_err).mean()),
                 "score_rmse": float(np.sqrt(((pred[i] - actual[i]) ** 2).mean())),
+                "poss_bias": float(poss_err.mean()),
+                "poss_rmse": float(np.sqrt((poss_err**2).mean())),
                 "sigma": sigma,
                 "log_loss": float(-(y * np.log(p) + (~y) * np.log(1 - p)).mean()),
                 "brier": float(((p - y) ** 2).mean()),
@@ -320,9 +335,9 @@ def load(con: duckdb.DuckDBPyConnection, out: Path = OUT) -> None:
 
 
 def models() -> dict[str, type]:
-    from yarapm.baselines import HomeCourt
+    from yarapm.baselines import HomeCourt, TeamRatings
 
-    return {"home": HomeCourt}
+    return {"home": HomeCourt, "team": TeamRatings}
 
 
 def setting(text: str) -> tuple[str, Any]:
@@ -361,7 +376,8 @@ def main(argv: list[str] | None = None) -> None:
             SELECT phase, games, round(margin_rmse, 2) AS margin_rmse,
                 round(margin_mae, 2) AS margin_mae, round(margin_bias, 2) AS margin_bias,
                 round(total_rmse, 2) AS total_rmse, round(total_bias, 2) AS total_bias,
-                round(score_rmse, 2) AS score_rmse, round(log_loss, 4) AS log_loss,
+                round(score_rmse, 2) AS score_rmse, round(poss_rmse, 2) AS poss_rmse,
+                round(log_loss, 4) AS log_loss,
                 round(brier, 4) AS brier
             FROM read_parquet('{args.out}/runs/metrics/run={rid}/data.parquet')
         """)

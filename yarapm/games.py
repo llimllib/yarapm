@@ -33,7 +33,8 @@ def load_results(con: duckdb.DuckDBPyConnection, where: str = "true") -> None:
     """
     Temp table `results`: one row per game, from the home team's side (at a
     neutral site, the team with the lower id), with each side's points and
-    the NBA's possession count. `home` is NULL at a neutral site
+    the NBA's possession count, and the game's length in minutes. `home` is
+    NULL at a neutral site
     """
     con.execute(f"""
         CREATE OR REPLACE TEMP TABLE results AS
@@ -41,7 +42,7 @@ def load_results(con: duckdb.DuckDBPyConnection, where: str = "true") -> None:
             t.team_id, t.opp_team_id,
             CASE WHEN g.neutral OR g.home_team_id IS NULL THEN NULL
                  ELSE true END AS home,
-            t.pts, o.pts AS opp_pts, t.poss, o.poss AS opp_poss
+            t.pts, o.pts AS opp_pts, t.poss, o.poss AS opp_poss, t.min
         FROM ({games_query(where)}) g
         JOIN nba.team_game_logs t USING (season, game_id)
         JOIN nba.team_game_logs o ON o.season = t.season AND o.game_id = t.game_id

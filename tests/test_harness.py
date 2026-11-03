@@ -4,7 +4,7 @@ import duckdb
 import pytest
 
 from yarapm.baselines import HomeCourt
-from yarapm.harness import Game, History, fit_days, run, score
+from yarapm.harness import Game, History, Prediction, fit_days, run, score
 
 
 def results(con, games):
@@ -15,9 +15,9 @@ def results(con, games):
     con.execute("""CREATE OR REPLACE TEMP TABLE results (season INTEGER,
         game_id VARCHAR, game_date DATE, game_type VARCHAR, team_id VARCHAR,
         opp_team_id VARCHAR, home BOOLEAN, pts INTEGER, opp_pts INTEGER,
-        poss INTEGER, opp_poss INTEGER)""")
+        poss INTEGER, opp_poss INTEGER, min DOUBLE)""")
     con.executemany(
-        "INSERT INTO results VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 100, 100)",
+        "INSERT INTO results VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 100, 100, 48)",
         [(g[0], f"g{i:04}", *g[1:]) for i, g in enumerate(games)],
     )
     con.execute(
@@ -71,9 +71,9 @@ class Spy:
             self.seen = latest or date.min
             assert self.seen < history.cutoff
 
-    def predict(self, games: list[Game]) -> list[tuple[float, float]]:
+    def predict(self, games: list[Game]) -> list[Prediction]:
         assert all(self.seen < g.game_date for g in games)
-        return [(100.0, 100.0)] * len(games)
+        return [Prediction(100.0, 100.0)] * len(games)
 
 
 @pytest.mark.parametrize("cadence", ["daily", "weekly"])
@@ -126,9 +126,9 @@ def test_score():
     con = duckdb.connect()
     predictions = con.sql("""
         SELECT * FROM (VALUES
-            ('early', 110.0, 100.0, 120, 100),
-            ('playoffs', 100.0, 110.0, 100, 100))
-        v(phase, pred_pts, pred_opp_pts, pts, opp_pts)
+            ('early', 110.0, 100.0, 120, 100, 100.0, 98.0),
+            ('playoffs', 100.0, 110.0, 100, 100, NULL, 95.0))
+        v(phase, pred_pts, pred_opp_pts, pts, opp_pts, pred_poss, poss)
     """)
     metrics = {m["phase"]: m for m in score(predictions)}
     assert set(metrics) == {"all", "early", "playoffs"}
@@ -138,5 +138,6 @@ def test_score():
     assert metrics["all"]["total_bias"] == 0
     assert metrics["all"]["total_mae"] == 10
     assert metrics["early"]["games"] == 1
+    assert metrics["early"]["poss_bias"] == 2
     # predicted margin of +10 with a spread of 10: 84% to win, and they won
     assert metrics["early"]["brier"] == pytest.approx((1 - 0.8413) ** 2, abs=1e-4)
