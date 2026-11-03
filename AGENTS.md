@@ -8,6 +8,26 @@ Commands (tools come from `mise.toml`):
 - `uv run python -m yarapm.segments [--season 2026 ...]` builds `out/segments/` (every season with play-by-play by default, ~20s), printing how many games each season keeps and why the rest are dropped
 - `uv run python -m yarapm.harness --model home|team [--cadence weekly|daily] [--season 2021 ...] [--set name=value ...]` walks a model forward through the tuning seasons, writes `out/runs/{predictions,metrics}/run=<id>/`, and prints the metrics by phase. Models are registered in `yarapm.harness.models()`; a model only sees data through `History`, filtered to games before the fit date. Compare runs with `FROM read_parquet('out/runs/metrics/*/*.parquet', union_by_name = true)` (older runs may lack newer metrics)
 
+`out/` is local and not committed. In a fresh checkout, run `yarapm.segments` before the harness: models only see segments if `out/segments/` exists. Code that isn't run with `-m` from the repo root (a scratch script in /tmp, say) needs `PYTHONPATH=.`, since the package isn't installed.
+
+## Code
+- `yarapm/catalog.py`: `connect()`, and `write_season()`/`read()` for `out/`
+- `yarapm/games.py`: which games we model (regular season, play-in, playoffs, Cup final; the 2020 bubble is neutral) and `load_results()`, one row per game from the home side
+- `yarapm/segments.py`: the lineup segments (#2); its docstring has the rules for placing plays and crediting possessions, and the columns
+- `yarapm/harness.py`: `Game`, `Prediction`, `History`, the `Model` protocol, `run()` and the metrics. Phases: `early`, `mid`, `post_deadline`, `playoffs`
+- `yarapm/fit.py`: `decay()` (half-life weights) and `weighted_ridge()`, shared by the models
+- `yarapm/tempo.py`, `yarapm/baselines.py`: adjusted tempo, and the `home` and `team` models
+
+To tune, call `harness.load(con)` once and loop `harness.run(con, Model(...), list(harness.TUNING_SEASONS), "weekly")` in one process, comparing on the `all` phase; confirm the chosen settings with a `daily` run. Record the grid and results in the issue, and put the chosen defaults in the model with a note on how they were picked.
+
+## Results so far
+Daily refits, 2021-2024 (the scoreboard is kept in #24):
+
+| model | margin RMSE | log loss | total RMSE | poss RMSE |
+|---|---|---|---|---|
+| `home` (home court only) | 14.98 | 0.687 | 19.97 | |
+| `team` (KenPom-style) | 13.93 | 0.636 | 18.73 | 4.57 |
+
 ## Data
 Source data is nba_data's catalog (`https://basketball-data.billmill.org/nba/nba.duckdb`); its data dictionary is `docs/DATA_DICTIONARY.md` in https://github.com/llimllib/nba_data (often checked out at `../nba_data`). `yarapm.catalog.connect()` attaches it as `nba`, so source tables are always `nba.<table>`. Filter on `season` whenever you can: other filters read every season's file. What we build goes under `out/` (gitignored), one parquet file per season, via `write_season()` and `read()`.
 
@@ -24,6 +44,12 @@ env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY duckdb -c "
   ATTACH 'https://basketball-data.billmill.org/nba/nba.duckdb' AS nba (READ_ONLY);
   SELECT count(*) FROM nba.games WHERE season = 2026"
 ```
+
+### DuckDB 2.0
+The Python API is stricter than 1.x:
+- relations have no `fetchone()`: use `con.execute(...).fetchone()` or `rel.fetchall()[0]`
+- a result from `con.execute()` must be fetched completely before the connection runs anything else (`ResourceInUseException`)
+- `duckdb.typing` is gone: compare `str(rel.types[i])`
 
 The CLI prints markdown tables when `AI_AGENT` is set; pass `-no-agent` for its normal output. Queries outside the sandbox's domain allowlist fail with `403 blocked-by-allowlist`; ask the user to allow the domain.
 
