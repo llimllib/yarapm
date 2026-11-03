@@ -45,13 +45,13 @@ env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY duckdb -c "
   SELECT count(*) FROM nba.games WHERE season = 2026"
 ```
 
+The CLI prints markdown tables when `AI_AGENT` is set; pass `-no-agent` for its normal output. Queries outside the sandbox's domain allowlist fail with `403 blocked-by-allowlist`; ask the user to allow the domain.
+
 ### DuckDB 2.0
 The Python API is stricter than 1.x:
 - relations have no `fetchone()`: use `con.execute(...).fetchone()` or `rel.fetchall()[0]`
 - a result from `con.execute()` must be fetched completely before the connection runs anything else (`ResourceInUseException`)
 - `duckdb.typing` is gone: compare `str(rel.types[i])`
-
-The CLI prints markdown tables when `AI_AGENT` is set; pass `-no-agent` for its normal output. Queries outside the sandbox's domain allowlist fail with `403 blocked-by-allowlist`; ask the user to allow the domain.
 
 ## GitHub issues
 Plans and progress live in GitHub issues on `llimllib/yarapm`, not in docs. Use the `gh` CLI.
