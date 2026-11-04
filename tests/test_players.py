@@ -102,6 +102,7 @@ def test_predicts_from_ratings_and_minutes():
         prior_weight=0,
         tempo_half_life=1e9,
         tempo_ridge=1e-6,
+        minutes="actual",
     )
     model.fit(History(con, date(2024, 6, 1), 2024))
     assert model.home == pytest.approx(HOME, abs=1e-4)

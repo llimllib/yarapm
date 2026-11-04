@@ -21,9 +21,10 @@ the opponents' defensive ratings, each player weighted by their share of
 the team's minutes × 5, so the weights add up to the five on the floor.
 Expected score: that × adjusted tempo (yarapm.tempo) / 100.
 
-The minutes are the ones each player actually played
-(`History.actual_minutes`), which leaks who played and measures rating
-error on its own until minutes are projected (#10).
+Minutes come from yarapm.minutes, by `minutes`: "actual" (the minutes
+played, a leak that measures rating error on its own), "known" (who plays
+is known, minutes projected) or "unknown" (who plays is projected too),
+with `minutes_half_life` and `start_bonus`.
 
 The defaults are the best of a grid on the tuning seasons (#8), weekly
 refits, by margin RMSE: half life 180-1460 days, ridge 1000-30000, prior
@@ -33,7 +34,6 @@ weights of 1-1.3 are within 0.03 points, so the simplest were kept. The
 level half life only moves totals.
 """
 
-from collections import defaultdict
 from typing import Any
 
 import numpy as np
@@ -42,6 +42,7 @@ from yarapm import rapm
 from yarapm.baselines import HALF_LIVES, recent
 from yarapm.fit import decay
 from yarapm.harness import Game, History, Prediction
+from yarapm.minutes import ActualMinutes, ProjectedMinutes, expected
 from yarapm.prior import BoxPrior, OpenRapmPrior
 from yarapm.tempo import PLAYOFF_TYPES, Tempo
 
@@ -106,6 +107,9 @@ class PlayerRatings:
         box_half_life: float = 365,
         tempo_half_life: float = 60,
         tempo_ridge: float = 3,
+        minutes: str = "known",
+        minutes_half_life: float = 5,
+        start_bonus: float = 5,
     ):
         self.half_life = half_life
         self.ridge = ridge
@@ -115,11 +119,16 @@ class PlayerRatings:
         self.box_half_life = box_half_life
         self.prior: BoxPrior | OpenRapmPrior = BoxPrior(box_half_life)
         self.tempo = Tempo(tempo_half_life, tempo_ridge)
+        self.minutes = minutes
+        self.projection: ActualMinutes | ProjectedMinutes = (
+            ActualMinutes()
+            if minutes == "actual"
+            else ProjectedMinutes(minutes, minutes_half_life, start_bonus)
+        )
         self.ratings: rapm.Fit | None = None
         self.level = 0.0
         self.home = 0.0
         self.playoffs = 0.0
-        self.history: History | None = None
 
     @property
     def settings(self) -> dict[str, Any]:
@@ -132,10 +141,18 @@ class PlayerRatings:
             "box_half_life": self.box_half_life,
             "tempo_half_life": self.tempo.half_life,
             "tempo_ridge": self.tempo.ridge,
-        }
+            "minutes": self.minutes,
+        } | (
+            {}
+            if isinstance(self.projection, ActualMinutes)
+            else {
+                "minutes_half_life": self.projection.half_life,
+                "start_bonus": self.projection.start_bonus,
+            }
+        )
 
     def fit(self, history: History) -> None:
-        self.history = history
+        self.projection.fit(history)
         rows, seasons, age = lineups(history, max(self.half_life, self.level_half_life))
         offense = defense = None
         if self.prior_weight:
@@ -194,42 +211,40 @@ class PlayerRatings:
         o, d = self.prior.prior(player)
         return self.prior_weight * o, self.prior_weight * d
 
-    def strength(self, minutes: list[tuple[str, float]]) -> tuple[float, float]:
+    def strength(self, minutes: dict[str, float]) -> tuple[float, float]:
         """
         A team's offense and defense: its players' ratings weighted by their
         share of its minutes × 5
         """
-        total = sum(m for _, m in minutes)
+        total = sum(minutes.values())
         offense = defense = 0.0
         if total == 0:
             return offense, defense
-        for player, m in minutes:
+        for player, m in minutes.items():
             o, d = self.rating(player)
             offense += 5 * m / total * o
             defense += 5 * m / total * d
         return offense, defense
 
     def predict(self, games: list[Game]) -> list[Prediction]:
-        assert self.history is not None
-        minutes: dict[tuple[str, str], list[tuple[str, float]]] = defaultdict(list)
-        for game_id, team_id, player_id, m in self.history.actual_minutes(
-            [g.game_id for g in games]
-        ):
-            minutes[game_id, team_id].append((player_id, m))
+        minutes = self.projection.predict(games)
 
         predictions = []
         for g in games:
             playoffs = g.game_type in PLAYOFF_TYPES
             home = 1.0 if g.home else 0.0
             base = self.level + playoffs * self.playoffs
-            off, dfn = self.strength(minutes[g.game_id, g.team_id])
-            opp_off, opp_dfn = self.strength(minutes[g.game_id, g.opp_team_id])
+            off, dfn = self.strength(minutes.get((g.game_id, g.team_id), {}))
+            opp_off, opp_dfn = self.strength(
+                minutes.get((g.game_id, g.opp_team_id), {})
+            )
             poss = self.tempo.predict(g.team_id, g.opp_team_id, playoffs)
             predictions.append(
                 Prediction(
                     (base + home * self.home + off - opp_dfn) * poss / 100,
                     (base - home * self.home + opp_off - dfn) * poss / 100,
                     poss,
+                    expected(minutes, g),
                 )
             )
         return predictions
@@ -247,7 +262,9 @@ class OpenRapm(PlayerRatings):
     name = "openrapm"
 
     def __init__(self, season: str = "last", **settings: Any):
-        super().__init__(**{"ridge": 1e9, "prior_weight": 1} | settings)
+        settings.setdefault("ridge", 1e9)
+        settings.setdefault("prior_weight", 1)
+        super().__init__(**settings)
         self.season = season
         self.prior = OpenRapmPrior(season)
 

@@ -24,6 +24,7 @@ seasons and cadence:
 
     out/runs/predictions/run=<run_id>/data.parquet
     out/runs/metrics/run=<run_id>/data.parquet
+    out/runs/minutes/run=<run_id>/data.parquet   if the model projects minutes
 
 Metrics are computed for every game and for each phase of the season:
 
@@ -35,6 +36,12 @@ Metrics are computed for every game and for each phase of the season:
 Win probability is P(margin > 0) for a normal centered on the predicted
 margin, with a spread of the run's margin RMSE; it's scored with log loss
 and Brier score.
+
+A model that projects each player's minutes (`Prediction.minutes`) is also
+scored on them: `minutes_mae` is the mean absolute error per player, over
+everyone projected or who played (missing ones count as 0), against the
+minutes they played scaled to 240 a team, since overtime can't be
+projected.
 """
 
 import argparse
@@ -93,11 +100,15 @@ class Game:
 
 
 class Prediction(NamedTuple):
-    """A game's expected score, and its possessions if the model has them"""
+    """
+    A game's expected score, its possessions and each player's minutes (both
+    teams'), if the model has them
+    """
 
     pts: float
     opp_pts: float
     poss: float | None = None
+    minutes: dict[str, float] | None = None
 
 
 class History:
@@ -152,6 +163,20 @@ class History:
         only for an optimistic baseline (#9)
         """
         return self.con.sql(f"FROM openrapm WHERE season = {int(season)}")
+
+    def active(self, game_ids: list[str]) -> list[tuple[str, str, str]]:
+        """
+        (game_id, team_id, player_id) for every player who played in
+        `game_ids`: a leak, for games on or after the cutoff, standing in
+        for knowing who's available (#10). It flatters a projection
+        slightly, since a player who's available but doesn't play is left
+        out
+        """
+        return self.con.execute(
+            """SELECT game_id, team_id, player_id FROM player_games
+            WHERE game_id IN (SELECT unnest(?::VARCHAR[])) AND min > 0""",
+            [game_ids],
+        ).fetchall()
 
     def actual_minutes(self, game_ids: list[str]) -> list[tuple[str, str, str, float]]:
         """
@@ -221,6 +246,7 @@ def run(
         raise ValueError(f"{held} are held out until the final evaluation (#12)")
 
     rows = []
+    minutes = []
     for season in sorted(seasons):
         games = [
             Game(*r)
@@ -240,7 +266,13 @@ def run(
                 raise ValueError(
                     f"{model.name} predicted {len(predicted)} of {len(todo)} games"
                 )
-            rows += [(g.game_id, *p) for g, p in zip(todo, predicted)]
+            rows += [(g.game_id, *p[:3]) for g, p in zip(todo, predicted)]
+            minutes += [
+                (g.game_id, player, m)
+                for g, p in zip(todo, predicted)
+                if p.minutes is not None
+                for player, m in p.minutes.items()
+            ]
 
     rid = run_id(model, seasons, cadence)
     con.register(
@@ -293,6 +325,18 @@ def run(
     con.unregister("predicted")
 
     metrics = score(con.sql("FROM predictions"))
+    outputs = [("predictions", "FROM predictions")]
+    if minutes:
+        minutes_errors(con, minutes)
+        outputs.append(("minutes", "FROM minutes"))
+        mae = dict(
+            con.sql("""
+                SELECT coalesce(phase, 'all'), avg(abs(pred_min - min))
+                FROM minutes GROUP BY ROLLUP (phase)
+            """).fetchall()
+        )
+        for m in metrics:
+            m["minutes_mae"] = mae.get(m["phase"])
     created = datetime.now(UTC)
     for m in metrics:
         m |= {
@@ -305,7 +349,7 @@ def run(
         }
     con.register("scored", pa.Table.from_pylist(metrics))
     for name, query in [
-        ("predictions", "FROM predictions"),
+        *outputs,
         (
             "metrics",
             """SELECT run_id, model, settings, seasons, cadence, created,
@@ -318,6 +362,43 @@ def run(
         con.execute(f"COPY ({query}) TO '{path}' (FORMAT parquet, COMPRESSION zstd)")
     con.unregister("scored")
     return rid
+
+
+def minutes_errors(
+    con: duckdb.DuckDBPyConnection, minutes: list[tuple[str, str, float]]
+) -> None:
+    """
+    Temp table `minutes`: each player's projected minutes in a game
+    (`minutes`: game_id, player_id, minutes) and the minutes they played,
+    scaled to 240 a team, for everyone in either, with each game's phase
+    from `predictions`
+    """
+    con.register(
+        "projected",
+        pa.table(
+            {
+                "game_id": [m[0] for m in minutes],
+                "player_id": [m[1] for m in minutes],
+                "pred_min": pa.array([m[2] for m in minutes], pa.float64()),
+            }
+        ),
+    )
+    con.execute("""
+        CREATE OR REPLACE TEMP TABLE minutes AS
+        WITH played AS (
+            SELECT game_id, player_id,
+                240 * min / sum(min) OVER (PARTITION BY game_id, team_id) AS min
+            FROM player_games
+            WHERE min > 0 AND game_id IN (SELECT game_id FROM projected)
+        )
+        SELECT p.run_id, p.season, game_id, p.game_date, p.phase, player_id,
+            coalesce(j.pred_min, 0) AS pred_min, coalesce(a.min, 0) AS min
+        FROM projected j
+        FULL JOIN played a USING (game_id, player_id)
+        JOIN predictions p USING (game_id)
+        ORDER BY p.game_date, game_id, player_id
+    """)
+    con.unregister("projected")
 
 
 def score(predictions: duckdb.DuckDBPyRelation) -> list[dict[str, Any]]:
@@ -374,10 +455,21 @@ def load(con: duckdb.DuckDBPyConnection, out: Path = OUT) -> None:
     `openrapm`, and `all_segments` if built
     """
     load_results(con)
+    # `started` is NULL for a game without rotations (before 2019)
     con.execute("""
         CREATE OR REPLACE TEMP TABLE player_games AS
-        SELECT * FROM nba.player_game_logs
-        WHERE game_id IN (SELECT game_id FROM results)
+        WITH starters AS (
+            SELECT DISTINCT game_id, player_id, true AS started
+            FROM nba.game_rotations WHERE in_time = 0
+        ), rotations AS (
+            SELECT DISTINCT game_id FROM nba.game_rotations
+        )
+        SELECT l.*, CASE WHEN r.game_id IS NOT NULL
+                THEN coalesce(s.started, false) END AS started
+        FROM nba.player_game_logs l
+        LEFT JOIN starters s USING (game_id, player_id)
+        LEFT JOIN rotations r USING (game_id)
+        WHERE l.game_id IN (SELECT game_id FROM results)
     """)
     con.execute("""
         CREATE OR REPLACE TEMP TABLE bio AS
@@ -439,6 +531,11 @@ def main(argv: list[str] | None = None) -> None:
         args.holdout,
     )
     print(rid, json.dumps(model.settings))
+    path = f"{args.out}/runs/metrics/run={rid}/data.parquet"
+    columns = [c for (c, *_) in con.sql(f"DESCRIBE FROM '{path}'").fetchall()]
+    minutes_mae = (
+        ", round(minutes_mae, 2) AS minutes_mae" if "minutes_mae" in columns else ""
+    )
     print(
         con.sql(f"""
             SELECT phase, games, round(margin_rmse, 2) AS margin_rmse,
@@ -446,8 +543,8 @@ def main(argv: list[str] | None = None) -> None:
                 round(total_rmse, 2) AS total_rmse, round(total_bias, 2) AS total_bias,
                 round(score_rmse, 2) AS score_rmse, round(poss_rmse, 2) AS poss_rmse,
                 round(log_loss, 4) AS log_loss,
-                round(brier, 4) AS brier
-            FROM read_parquet('{args.out}/runs/metrics/run={rid}/data.parquet')
+                round(brier, 4) AS brier{minutes_mae}
+            FROM read_parquet('{path}')
         """)
     )
 
