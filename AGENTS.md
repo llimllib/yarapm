@@ -39,6 +39,19 @@ Daily refits, 2021-2024 (the scoreboard is kept in #24):
 | `rapm` with the box-score prior, known availability | 13.58 | 0.613 | 18.35 | 4.57 | 4.73 |
 | `openrapm` (this season's: leaks, a ceiling; actual minutes) | 13.06 | 0.591 | 17.96 | 4.57 | |
 
+The holdout, 2025-2026 (2,643 games), was scored once with every setting fixed (#12). Don't tune on it:
+
+| model | margin RMSE | log loss | total RMSE | minutes MAE |
+|---|---|---|---|---|
+| `home` | 16.23 | 0.688 | 19.97 | |
+| `openrapm`, last season's, unknown availability | 14.78 | 0.617 | 18.48 | 6.43 |
+| `openrapm`, last season's, known availability | 14.62 | 0.606 | 18.34 | 4.72 |
+| `team` | 14.48 | 0.608 | 18.48 | |
+| `rapm`, unknown availability | 14.42 | 0.606 | 18.36 | 6.43 |
+| `rapm`, known availability | 14.22 | 0.593 | 18.23 | 4.72 |
+| `rapm`, actual minutes | 14.22 | 0.592 | 18.28 | |
+| `openrapm`, this season's (a ceiling) | 13.69 | 0.570 | 17.82 | 4.72 |
+
 ## Data
 Source data is nba_data's catalog (`https://basketball-data.billmill.org/nba/nba.duckdb`); its data dictionary is `docs/DATA_DICTIONARY.md` in https://github.com/llimllib/nba_data (often checked out at `../nba_data`). `yarapm.catalog.connect()` attaches it as `nba`, so source tables are always `nba.<table>`. Filter on `season` whenever you can: other filters read every season's file. What we build goes under `out/` (gitignored), one parquet file per season, via `write_season()` and `read()`.
 
