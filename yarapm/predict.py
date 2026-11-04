@@ -4,7 +4,7 @@ Predict games that haven't been played (#26).
     uv run python -m yarapm.predict [--date 2026-11-05] [--days 7]
         [--model rapm|team] [--no-segments]
 
-Rebuilds the season's segments (yarapm.segments), fits the model on every
+Rebuilds every season's segments (yarapm.segments), fits the model on every
 game before `--date`, as the harness does for a day, and predicts the games
 in nba.schedule from `--date` through `--days` days: each team's expected
 points, possessions, win probability and, for `rapm`, each player's
@@ -115,7 +115,9 @@ def main(argv: list[str] | None = None) -> None:
         print(f"no games scheduled from {day} through {args.days} days")
         return
     if not args.no_segments:
-        segments.main(["--season", str(games[0][0].season), "--out", str(args.out)])
+        # every season, not just this one: the box-score prior is fit to
+        # RAPM over the earlier seasons
+        segments.main(["--out", str(args.out)])
     load(con, args.out)
     forecasts = forecast(con, live_models()[args.model], games, day)
     print_forecasts(con, forecasts)

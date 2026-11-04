@@ -823,8 +823,10 @@ def main(argv: list[str] | None = None) -> None:
     day = args.date or datetime.now(EASTERN).date()
     con = connect()
     games = scheduled(con, day, 366)
+    # every season, not just this one: the box-score prior is fit to RAPM
+    # over the earlier seasons, and CI starts without any (~1 minute)
     if games and not args.no_segments:
-        segments.main(["--season", str(games[0][0].season)])
+        segments.main([])
     load(con)
     for dataset in build(con, day, args.root, commit()):
         print(f"wrote {dataset}")

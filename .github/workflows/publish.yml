@@ -64,7 +64,7 @@ jobs:
             echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
 
-      # rebuilds the season's segments, fits, and checks every dataset
+      # rebuilds every season's segments, fits, and checks every dataset
       # before writing any, so a failure uploads nothing
       - name: Build
         if: steps.current.outputs.skip != 'true'
