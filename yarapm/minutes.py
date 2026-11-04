@@ -159,14 +159,18 @@ class ProjectedMinutes:
             for team in (g.team_id, g.opp_team_id):
                 out[g.game_id, team] = allocate(
                     {
-                        p: self.chance(*spot) * self.minutes(p)
-                        for p, spot in self.rosters.get(team, {}).items()
+                        p: chance * self.minutes(p)
+                        for p, chance in self.playing_chances(team).items()
                     }
                 )
         return out
 
     def chance(self, since: int, played: int) -> float:
         return self.chances.get((since, played), 0.0)
+
+    def playing_chances(self, team: str) -> dict[str, float]:
+        """With unknown availability, the chance each player on a roster plays"""
+        return {p: self.chance(*spot) for p, spot in self.rosters.get(team, {}).items()}
 
 
 def team_games(history: History) -> str:
