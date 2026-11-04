@@ -1,0 +1,145 @@
+name: Publish
+
+# Predicts the upcoming games and publishes the datasets (yarapm.publish,
+# docs/DATA.md) to the yarapm/ prefix of the basketball-data Space, after
+# every nba_data update (#28)
+
+on:
+  # sent by nba_data's update.yml once its catalog is published
+  repository_dispatch:
+    types: [nba-data-updated]
+  # a fallback for a lost dispatch, after nba_data's 04:43 UTC run: skipped
+  # if nba_data hasn't updated since the last build
+  schedule:
+    - cron: "17 5 * * *"
+  # always builds
+  workflow_dispatch:
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  BUCKET: basketball-data
+  URL: https://basketball-data.billmill.org
+  # sometimes uv fails when downloading packages; increase its timeout
+  UV_HTTP_TIMEOUT: 600
+  # as nba_data's update.yml: browsers revalidate every file on every load
+  # and the CDN caches it for an hour, purged after each upload. Without
+  # max-age=0, a browser can combine part of a file with ranges of the next
+  # version, and a parquet reader finds a bad footer
+  CACHE_CONTROL: "public, max-age=0, must-revalidate, s-maxage=3600"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      # installs python, uv, ruff and ty from mise.toml
+      - uses: jdx/mise-action@v5
+
+      # ratings_daily and the logs keep what earlier builds wrote, so start
+      # from the bucket's files (the build refuses to run without them, if
+      # metadata.json lists them). sync succeeds when there are none yet
+      - name: Download the published files
+        run: aws s3 sync "s3://$BUCKET/yarapm/" out/publish/yarapm/ --exclude 'yarapm.duckdb*' --no-progress
+        env: &spaces
+          AWS_ACCESS_KEY_ID: ${{ secrets.DO_SPACES_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DO_SPACES_SECRET }}
+          AWS_ENDPOINT_URL: https://sfo3.digitaloceanspaces.com
+          AWS_DEFAULT_REGION: us-east-1
+
+      - name: Check for new data
+        id: current
+        if: github.event_name != 'workflow_dispatch'
+        run: |
+          if uv run python -m yarapm.publish current; then
+            echo "nba_data hasn't updated since the last build"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # rebuilds the season's segments, fits, and checks every dataset
+      # before writing any, so a failure uploads nothing
+      - name: Build
+        if: steps.current.outputs.skip != 'true'
+        run: uv run python -m yarapm.publish build
+
+      # metadata.json goes up with the catalog, so it never lists files the
+      # catalog doesn't have
+      - name: Upload
+        if: steps.current.outputs.skip != 'true'
+        run: aws s3 sync out/publish/ "s3://$BUCKET/" --acl public-read --cache-control "$CACHE_CONTROL" --no-progress --exclude '*' --include '*.parquet'
+        env: *spaces
+
+      # the catalog's views read the files through the CDN when they're
+      # created, so it must see the ones just uploaded
+      - name: Purge the CDN
+        if: steps.current.outputs.skip != 'true'
+        run: &purge |
+          curl -sf -X DELETE \
+            -H "Authorization: Bearer $DO_CDN_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{"files": ["yarapm/*"]}' \
+            "https://api.digitalocean.com/v2/cdn/endpoints/$DO_CDN_ENDPOINT_ID/cache"
+        env: &cdn
+          DO_CDN_API_KEY: ${{ secrets.DO_CDN_API_KEY }}
+          DO_CDN_ENDPOINT_ID: ${{ secrets.DO_CDN_ENDPOINT_ID }}
+
+      # DuckDB 2.0 reads <catalog>.wal when it attaches, and fails on the 403
+      # Spaces returns for a missing key, so an empty one goes with it, as
+      # in nba_data (its #95)
+      - name: Build and upload the catalog
+        if: steps.current.outputs.skip != 'true'
+        run: |
+          uv run python -m yarapm.publish catalog --url "$URL"
+          aws s3 cp out/publish/yarapm/yarapm.duckdb "s3://$BUCKET/yarapm/yarapm.duckdb" --acl public-read --cache-control "$CACHE_CONTROL" --no-progress
+          aws s3 cp - "s3://$BUCKET/yarapm/yarapm.duckdb.wal" --acl public-read --cache-control "$CACHE_CONTROL" --no-progress < /dev/null
+          aws s3 cp out/publish/yarapm/metadata.json "s3://$BUCKET/yarapm/metadata.json" --acl public-read --cache-control "$CACHE_CONTROL" --content-type application/json --no-progress
+        env: *spaces
+
+      - name: Purge the CDN again, for the catalog
+        if: steps.current.outputs.skip != 'true'
+        run: *purge
+        env: *cdn
+
+      - name: Verify
+        if: steps.current.outputs.skip != 'true'
+        run: uv run python -m yarapm.publish verify --url "$URL"
+
+      # comment on the open failure issue, or file one, so a run of
+      # failures doesn't open an issue each
+      - name: Notify on failure
+        if: failure()
+        uses: actions/github-script@v9.0.0
+        with:
+          script: |
+            const issueTitle = 'Publish workflow failed';
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              creator: 'github-actions[bot]'
+            });
+            const existingIssue = issues.data.find(issue => issue.title === issueTitle);
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            if (existingIssue) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existingIssue.number,
+                body: `Another failure: ${runUrl}`
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: issueTitle,
+                body: `Workflow run failed: ${runUrl}\n\nThe bucket keeps the last good files. Check the run's logs.`
+              });
+            }

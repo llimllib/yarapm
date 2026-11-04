@@ -4,6 +4,8 @@ basketball-data bucket, with their own catalog:
 
     uv run python -m yarapm.publish build [--date 2026-11-05] [--no-segments]
     uv run python -m yarapm.publish catalog [--url https://basketball-data.billmill.org]
+    uv run python -m yarapm.publish current
+    uv run python -m yarapm.publish verify [--url https://basketball-data.billmill.org]
 
 `build` predicts the rest of the season with the live `rapm` model
 (yarapm.predict) and writes the datasets into out/publish/, a mirror of the
@@ -49,12 +51,19 @@ good files.
 files when it's created, so they must be uploaded first. Without `--url`,
 the views read the mirror's files, and the catalog goes to
 out/yarapm.local.duckdb, outside the mirror, so it's never uploaded.
+
+`current` exits 0 if the mirror's last build read nba_data's latest
+update (its metadata.json's newest `updated`), so a scheduled run can skip
+a build that would find nothing new, and 1 if not. `verify` attaches the
+catalog at `--url` and reads every dataset in it.
 """
 
 import argparse
 import json
 import os
 import subprocess
+import sys
+import urllib.request
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
@@ -682,6 +691,7 @@ def write_metadata(
             **entry,
         }
     text = json.dumps({"datasets": datasets, **run, "updated": now}, indent=2) + "\n"
+    path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.tmp")
     tmp.write_text(text)
     os.replace(tmp, path)
@@ -754,6 +764,34 @@ def catalog(root: Path = PUBLISH, url: str | None = None) -> Path:
     return path
 
 
+def current(root: Path = PUBLISH, url: str = URL) -> bool:
+    """Whether the last build read nba_data's latest update"""
+    path = metadata_path(root)
+    if not path.exists():
+        return False
+    built = json.loads(path.read_text()).get("source_updated")
+    with urllib.request.urlopen(f"{url}/nba/metadata.json", timeout=60) as r:
+        nba = json.load(r)
+    latest = max(d["updated"] for d in nba["datasets"].values())
+    print(f"nba_data updated {latest}; the last build read {built}")
+    # both are UTC ISO 8601 with a Z, so they compare as strings
+    return built is not None and built >= latest
+
+
+def verify(url: str = URL) -> None:
+    """Attach the published catalog and read every dataset in it"""
+    con = connect()
+    con.execute(f"ATTACH '{url}/{PREFIX}/{PREFIX}.duckdb' AS {PREFIX} (READ_ONLY)")
+    datasets = [
+        d for (d,) in con.execute(f"SELECT dataset FROM {PREFIX}.metadata").fetchall()
+    ]
+    for dataset in datasets:
+        (rows,) = con.execute(f"SELECT count(*) FROM {PREFIX}.{dataset}").fetchall()[0]
+        print(f"{dataset}: {rows} rows")
+        if not rows:
+            raise ValueError(f"{dataset} is empty")
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     commands = parser.add_subparsers(dest="command", required=True)
@@ -766,12 +804,20 @@ def main(argv: list[str] | None = None) -> None:
     )
     c = commands.add_parser("catalog", help="write the catalog")
     c.add_argument("--url", help=f"where the files are, such as {URL}")
-    for p in (b, c):
+    u = commands.add_parser("current", help="exit 0 if nba_data hasn't updated")
+    v = commands.add_parser("verify", help="read every published dataset")
+    v.add_argument("--url", default=URL)
+    for p in (b, c, u):
         p.add_argument("--root", type=Path, default=PUBLISH)
     args = parser.parse_args(argv)
 
     if args.command == "catalog":
         print(f"wrote {catalog(args.root, args.url)}")
+        return
+    if args.command == "current":
+        sys.exit(0 if current(args.root) else 1)
+    if args.command == "verify":
+        verify(args.url)
         return
 
     day = args.date or datetime.now(EASTERN).date()

@@ -6,6 +6,7 @@ import pytest
 
 from yarapm.publish import (
     catalog,
+    current,
     dataset_path,
     metadata_path,
     ratings_table,
@@ -128,3 +129,28 @@ def test_metadata_and_catalog(tmp_path):
         ("predictions", "def", '{"ridge": 3000}'),
         ("ratings_daily", "abc", '{"ridge": 3000}'),
     ]
+
+
+def test_current(tmp_path):
+    nba = tmp_path / "site" / "nba" / "metadata.json"
+    nba.parent.mkdir(parents=True)
+    nba.write_text(
+        json.dumps(
+            {
+                "datasets": {
+                    "games": {"updated": "2026-11-04T00:54:13Z"},
+                    "schedule": {"updated": "2026-11-04T04:54:13Z"},
+                }
+            }
+        )
+    )
+    url = (tmp_path / "site").as_uri()
+    root = tmp_path / "publish"
+    # never built
+    assert not current(root, url)
+    for built, expected in [
+        ("2026-11-04T00:54:13Z", False),
+        ("2026-11-04T04:54:13Z", True),
+    ]:
+        write_metadata(root, {}, {"source_updated": built})
+        assert current(root, url) == expected
