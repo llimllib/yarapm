@@ -81,7 +81,7 @@ The Python API is stricter than 1.x:
 Plans and progress live in GitHub issues on `llimllib/yarapm`, not in docs. Use the `gh` CLI.
 
 - **Tracking issue #24** has the design summary and a task list of every work issue by milestone. Keep it current when issues are added or closed
-- **Milestones**, in build order (use the exact title with `gh issue create --milestone`): `1. Lineup segments`, `2. Walk-forward harness & team baseline`, `3. Player ratings`, `4. Projected minutes & final evaluation`
+- **Milestones**, in build order (use the exact title with `gh issue create --milestone`): `1. Lineup segments`, `2. Walk-forward harness & team baseline`, `3. Player ratings`, `4. Projected minutes & final evaluation`, `5. Publishing`
 - **Experiments:** ideas to try later are issues labeled `experiment`, with no milestone. Each says what to try and what result would show it worked. When something comes up that's out of scope, open one rather than doing it. Report results in the issue, citing the harness run's settings, and judge them on the tuning seasons only
 - Close work issues from the commit that finishes them (`Closes #N`), and check that CI passes
 - Creating issues and pushing are visible to others: confirm with the user first unless they've asked for it
