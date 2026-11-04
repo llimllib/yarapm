@@ -1,7 +1,8 @@
 # yarapm's data
 
 What yarapm publishes: player ratings, predictions for the games not yet
-played, and projected minutes, rebuilt every time
+played, projected minutes, and a log of every prediction scored as the
+games finish, rebuilt every time
 [nba_data](https://github.com/llimllib/nba_data) updates. The files are
 under the `yarapm/` prefix of the `basketball-data` bucket, laid out like
 nba_data's, one parquet file per season:
@@ -114,6 +115,64 @@ of their recent games), scaled to 240, with no one above 42.
 | play_prob | DOUBLE | The chance they play, from how many of the team's last 10 games they played and how long ago their last one was |
 | as_of_date | DATE | The build's day |
 
+### `prediction_log`
+
+Every prediction made for a game before it started, from the published
+model (`rapm`) and, to compare it to, a team-rating baseline (`team`,
+KenPom-style). Each build logs its predictions for the games in the next 7
+days that haven't started, but only where a game's prediction has changed
+since its last row (so usually once a day, when the games before the day
+are added). Rows are never changed or removed: they're what was said
+before the game. Keyed by `season`, `model`, `game_id` and `created`.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| season, model, game_id, created | | Key. `created` (TIMESTAMPTZ) is when the build ran |
+| commit, settings | VARCHAR | The yarapm commit and the model's settings (JSON) |
+| game_date ... as_of_date | | As in `predictions` |
+
+`team` predictions use their own spread for `home_win_prob`, 13.93
+points, its error on 2021-2024.
+
+```sql
+-- what was predicted for each finished game: the last row before tip-off
+SELECT * FROM yarapm.prediction_log
+WHERE season = 2027 AND model = 'rapm' AND created < start_time
+QUALIFY row_number() OVER (PARTITION BY game_id ORDER BY created DESC) = 1;
+```
+
+### `minutes_log`
+
+The projected minutes behind each `rapm` prediction in `prediction_log`,
+keyed by `season`, `model`, `game_id`, `created` and `player_id`, with
+`team_id`, `min` and `play_prob` as in `minutes`.
+
+### `live_metrics`
+
+The log scored, rebuilt by every build: for each finished game, the last
+prediction each model made before tip-off, against the result. One row per
+series and phase. A series is a model with one commit and settings, so a
+change to the model starts a new one; each is reported separately. Missing
+until a logged game has finished.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| season, model, commit, settings, phase | | Key. `phase` is `all`, or `early` (either team in its first 20 games), `mid`, `post_deadline` or `playoffs` (with the play-in) |
+| first_game_date, last_game_date | DATE | The series' scored games |
+| games | BIGINT | Games scored |
+| margin_rmse, margin_mae, margin_bias | DOUBLE | Error in the home team's margin, predicted − actual |
+| total_rmse, total_mae, total_bias | DOUBLE | Error in the total |
+| score_rmse | DOUBLE | Error in each team's points |
+| poss_rmse, poss_bias | DOUBLE | Error in possessions per team |
+| sigma | DOUBLE | The series' margin RMSE over all its games |
+| log_loss, brier | DOUBLE | The win probabilities scored with `sigma` as the spread, as yarapm's test harness scores them, so they compare with its results |
+| published_log_loss, published_brier | DOUBLE | The win probabilities as published, with the fixed spread |
+| minutes_mae | DOUBLE | `rapm`'s mean absolute error in projected minutes per player, over everyone projected or who played, against minutes played scaled to 240 a team. NULL for `team` |
+
+The `post_deadline` phase needs the season's trade deadline in
+`yarapm.harness.TRADE_DEADLINES`; until it's added, those games count as
+`mid`.
+
 ### `metadata`
 
 A table in the catalog, one row per dataset, also published as
@@ -125,7 +184,7 @@ A table in the catalog, one row per dataset, also published as
 | first_season, last_season, seasons | INTEGER | The seasons it has; `seasons` is a count |
 | updated | TIMESTAMPTZ | When a build last wrote it |
 | commit | VARCHAR | The yarapm commit that wrote it, with `-dirty` if it had uncommitted changes |
-| model, settings | VARCHAR | The model and its settings (JSON) |
+| model, settings | VARCHAR | The model and its settings (JSON). The logs and `live_metrics` have both models, so no settings: they're in each row |
 
 `metadata.json` has the table's rows keyed by dataset, with times in UTC
 ISO 8601, and three more keys: `as_of_date`, the latest build's day;

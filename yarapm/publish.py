@@ -20,9 +20,23 @@ bucket's yarapm/ prefix, laid out like nba_data's, one file per season:
                    from the date on, replaced every build
     minutes        each player's projected minutes and chance of playing
                    in those games
+    prediction_log every prediction made before its game (#29), from the
+                   live `rapm` and `team` models, for the games in the
+                   next LOG_DAYS days that haven't started. A build adds a
+                   row only when a game's prediction has changed since its
+                   last one, and never changes a row
+    minutes_log    `rapm`'s projected minutes for each prediction it logs
+    live_metrics   the log scored: for each finished game, the last
+                   prediction made before tip-off, with the harness's
+                   metrics, by series (model, commit and settings) and
+                   phase
     metadata       per dataset: seasons, when it was updated, and the
                    commit and settings that built it; also the date the
                    build predicted from and nba_data's latest update
+
+Both logs and ratings_daily keep what earlier builds wrote, so a build
+refuses to run if metadata.json lists a season of them that the mirror
+doesn't have.
 
 docs/DATA.md has the columns. Values are rounded (ratings, points and
 minutes to two decimals, probabilities to four): full-precision doubles
@@ -49,8 +63,9 @@ import duckdb
 import pyarrow as pa
 
 from yarapm import segments
+from yarapm.baselines import TeamRatings
 from yarapm.catalog import OUT, connect
-from yarapm.harness import History, load
+from yarapm.harness import History, load, phases, score
 from yarapm.minutes import ProjectedMinutes
 from yarapm.players import PlayerRatings
 from yarapm.predict import EASTERN, Forecast, forecast, scheduled
@@ -59,6 +74,9 @@ PUBLISH = OUT / "publish"
 PREFIX = "yarapm"
 URL = "https://basketball-data.billmill.org"
 DATASETS = ("ratings_daily", "predictions", "minutes")
+LOGS = ("prediction_log", "minutes_log")
+# a build logs the predictions for the games in this many days
+LOG_DAYS = 7
 # DuckDB 1.1.1, in Observable Framework's DuckDB-wasm, reads up to v1.0.0
 STORAGE_VERSION = "v1.0.0"
 
@@ -156,17 +174,20 @@ def build(
     day: date,
     root: Path = PUBLISH,
     sha: str = "unknown",
+    now: datetime | None = None,
 ) -> list[str]:
     """
     Fit and write the datasets into `root` for the season of the first game
-    scheduled from `day`. Needs the tables `yarapm.harness.load` makes.
-    Returns the datasets written
+    scheduled from `day`, as of `now` (when a prediction is logged). Needs
+    the tables `yarapm.harness.load` makes. Returns the datasets written
     """
+    now = now or datetime.now(UTC)
     games = scheduled(con, day, 366)
     if not games:
         print(f"no games scheduled from {day}")
         return []
     season = games[0][0].season
+    check_mirror(root, season)
     games = [(g, start) for g, start in games if g.season == season]
     model = live_model()
     settings = json.dumps(model.settings, sort_keys=True)
@@ -196,33 +217,78 @@ def build(
             earlier.fit(History(con, d, season))
             rated[d] = ratings(earlier, History(con, d, season))
 
+    team = TeamRatings()
+    window = [(g, start) for g, start in games if (g.game_date - day).days < LOG_DAYS]
+    team_forecasts = forecast(con, team, window, day)
+
     predictions_table(con, forecasts, season, day)
+    predictions_table(con, team_forecasts, season, day, "team_predictions")
     minutes_table(con, minutes, chances, day)
     ratings_table(con, rated, sha, settings, existing if have else None)
+    log_tables(
+        con,
+        now,
+        day,
+        sha,
+        {
+            model.name: ("predictions", settings),
+            team.name: ("team_predictions", json.dumps(team.settings, sort_keys=True)),
+        },
+        {log: dataset_path(root, log, season) for log in LOGS},
+    )
+    scored = live_metrics(con, season)
     validate(con, len(games))
 
-    for dataset in DATASETS:
+    written = [*DATASETS, *LOGS] + (["live_metrics"] if scored else [])
+    for dataset in written:
         write(con, f"FROM {dataset}", dataset_path(root, dataset, season))
+    about = {"commit": sha, "model": model.name, "settings": model.settings}
+    both = {"commit": sha, "model": f"{model.name}, {team.name}", "settings": None}
     write_metadata(
         root,
-        DATASETS,
         {
-            "commit": sha,
-            "model": model.name,
-            "settings": model.settings,
+            d: both if d in ("prediction_log", "live_metrics") else about
+            for d in written
         },
         {
             "as_of_date": day.isoformat(),
             "source_updated": source_updated(con),
         },
     )
-    return list(DATASETS)
+    return written
+
+
+def check_mirror(root: Path, season: int) -> None:
+    """
+    Raise if the mirror lacks a season of a dataset that keeps what earlier
+    builds wrote, which metadata.json says the bucket has
+    """
+    path = metadata_path(root)
+    if not path.exists():
+        return
+    datasets = json.loads(path.read_text()).get("datasets", {})
+    for dataset in ("ratings_daily", *LOGS):
+        if dataset not in datasets:
+            continue
+        expected = datasets[dataset]["seasons"]
+        found = seasons(root, dataset)
+        if len(found) < expected or (
+            datasets[dataset]["last_season"] == season and season not in found
+        ):
+            raise ValueError(
+                f"{dataset} has {len(found)} of its {expected} seasons in {root}: "
+                "download the bucket's yarapm/ first"
+            )
 
 
 def predictions_table(
-    con: duckdb.DuckDBPyConnection, forecasts: list[Forecast], season: int, day: date
+    con: duckdb.DuckDBPyConnection,
+    forecasts: list[Forecast],
+    season: int,
+    day: date,
+    name: str = "predictions",
 ) -> None:
-    """Temp table `predictions`, from the home team's side, as nba.schedule lists it"""
+    """Temp table `name`, from the home team's side, as nba.schedule lists it"""
     register(
         con,
         "forecasts",
@@ -238,8 +304,8 @@ def predictions_table(
         },
     )
     con.execute(
-        """
-        CREATE OR REPLACE TEMP TABLE predictions AS
+        f"""
+        CREATE OR REPLACE TEMP TABLE {name} AS
         WITH f AS (
             SELECT f.*, s.*, f.team_id = s.home_team_id AS home
             FROM forecasts f
@@ -346,6 +412,166 @@ def ratings_table(
     )
 
 
+def log_tables(
+    con: duckdb.DuckDBPyConnection,
+    now: datetime,
+    day: date,
+    sha: str,
+    models: dict[str, tuple[str, str]],
+    existing: dict[str, Path],
+) -> None:
+    """
+    Temp tables `prediction_log` and `minutes_log`: the `existing` files
+    (by log), and the predictions in each model's table (`models`: name ->
+    (table, settings)) for the games in the next LOG_DAYS days that haven't
+    started by `now`, where they've changed since the game's last row.
+    `minutes_log` gets the `minutes` of the `rapm` predictions logged
+    """
+    created = now.astimezone(UTC).isoformat()
+    made = " UNION ALL ".join(
+        f"""SELECT '{name}' AS model, '{sha}' AS commit, '{settings}' AS settings,
+            '{created}'::TIMESTAMPTZ AS created, *
+        FROM {table}
+        WHERE game_date < DATE '{day}' + {LOG_DAYS}
+            AND start_time > '{created}'::TIMESTAMPTZ"""
+        for name, (table, settings) in models.items()
+    )
+    old = {
+        log: f"read_parquet('{path}')" if path.exists() else f"(FROM {log}_empty)"
+        for log, path in existing.items()
+    }
+    con.execute(f"""
+        CREATE OR REPLACE TEMP TABLE prediction_log_empty AS
+        SELECT * FROM ({made}) LIMIT 0
+    """)
+    con.execute("""
+        CREATE OR REPLACE TEMP TABLE minutes_log_empty AS
+        SELECT NULL::VARCHAR AS model, NULL::TIMESTAMPTZ AS created,
+            * EXCLUDE (as_of_date)
+        FROM minutes LIMIT 0
+    """)
+    con.execute(f"""
+        CREATE OR REPLACE TEMP TABLE logged AS
+        WITH last AS (
+            FROM {old["prediction_log"]}
+            QUALIFY row_number() OVER (
+                PARTITION BY model, game_id ORDER BY created DESC) = 1
+        )
+        SELECT n.* FROM ({made}) n
+        LEFT JOIN last l USING (model, game_id)
+        WHERE l.game_id IS NULL
+            OR (n.home_pts, n.away_pts, n.poss, n.home_win_prob, n.commit,
+                n.settings)
+            IS DISTINCT FROM
+                (l.home_pts, l.away_pts, l.poss, l.home_win_prob, l.commit,
+                l.settings)
+    """)
+    con.execute(f"""
+        CREATE OR REPLACE TEMP TABLE prediction_log AS
+        SELECT * FROM {old["prediction_log"]}
+        UNION ALL BY NAME FROM logged
+        ORDER BY created, model, game_date, start_time, game_id
+    """)
+    con.execute(f"""
+        CREATE OR REPLACE TEMP TABLE minutes_log AS
+        SELECT * FROM {old["minutes_log"]}
+        UNION ALL BY NAME
+        SELECT l.model, l.created, m.* EXCLUDE (as_of_date)
+        FROM minutes m JOIN logged l ON l.model = 'rapm' AND l.game_id = m.game_id
+        ORDER BY created, model, game_id, team_id, min DESC, player_id
+    """)
+
+
+def live_metrics(con: duckdb.DuckDBPyConnection, season: int) -> int:
+    """
+    Temp table `live_metrics`: the season's finished games in
+    `prediction_log`, each scored on its last prediction made before
+    tip-off, by series and phase. Returns the number of games scored
+    """
+    con.execute(f"""
+        CREATE OR REPLACE TEMP TABLE scored AS
+        WITH last AS (
+            FROM prediction_log WHERE created < start_time
+            QUALIFY row_number() OVER (
+                PARTITION BY model, game_id ORDER BY created DESC) = 1
+        )
+        SELECT l.model, l.commit, l.settings, l.game_id, l.game_date, l.created,
+            ph.phase, l.home_win_prob, l.home_pts AS pred_pts,
+            l.away_pts AS pred_opp_pts,
+            CASE WHEN r.team_id = l.home_team_id THEN r.pts ELSE r.opp_pts END
+                AS pts,
+            CASE WHEN r.team_id = l.home_team_id THEN r.opp_pts ELSE r.pts END
+                AS opp_pts,
+            l.poss AS pred_poss, (r.poss + r.opp_poss) / 2 AS poss
+        FROM last l
+        JOIN results r USING (game_id)
+        JOIN ({phases()}) ph USING (game_id)
+        WHERE r.season = {season}
+    """)
+    series = con.execute("""
+        SELECT model, commit, settings, min(game_date), max(game_date)
+        FROM scored GROUP BY ALL ORDER BY min(game_date), model
+    """).fetchall()
+    rows = []
+    for model, sha, settings, first, last in series:
+        where = f"model = '{model}' AND commit = '{sha}' AND settings = '{settings}'"
+        published = {
+            phase: (log_loss, brier)
+            for phase, log_loss, brier in con.execute(f"""
+                SELECT coalesce(phase, 'all'),
+                    avg(-CASE WHEN pts > opp_pts THEN ln(p) ELSE ln(1 - p) END),
+                    avg((p - (pts > opp_pts)::INTEGER) ** 2)
+                FROM (
+                    SELECT *, greatest(least(home_win_prob, 1 - 1e-6), 1e-6) AS p
+                    FROM scored WHERE {where}
+                )
+                GROUP BY ROLLUP (phase)
+            """).fetchall()
+        }
+        minutes = dict(
+            con.execute(f"""
+                WITH s AS (FROM scored WHERE {where}),
+                projected AS (
+                    SELECT m.game_id, m.player_id, m.min AS pred_min
+                    FROM minutes_log m JOIN s USING (model, game_id, created)
+                ), played AS (
+                    SELECT game_id, player_id,
+                        240 * min / sum(min) OVER (PARTITION BY game_id, team_id)
+                            AS min
+                    FROM player_games
+                    WHERE min > 0 AND game_id IN (SELECT game_id FROM projected)
+                )
+                SELECT coalesce(s.phase, 'all'),
+                    avg(abs(coalesce(pred_min, 0) - coalesce(a.min, 0)))
+                FROM projected j
+                FULL JOIN played a USING (game_id, player_id)
+                JOIN s USING (game_id)
+                GROUP BY ROLLUP (s.phase)
+            """).fetchall()
+        )
+        for m in score(con.sql(f"FROM scored WHERE {where}")):
+            log_loss, brier = published[m["phase"]]
+            rows.append(
+                {
+                    "model": model,
+                    "commit": sha,
+                    "settings": settings,
+                    "first_game_date": first,
+                    "last_game_date": last,
+                    **m,
+                    "published_log_loss": log_loss,
+                    "published_brier": brier,
+                    "minutes_mae": minutes.get(m["phase"]),
+                }
+            )
+    if rows:
+        con.register("_rows", pa.Table.from_pylist(rows))
+        con.execute("CREATE OR REPLACE TEMP TABLE live_metrics AS FROM _rows")
+        con.unregister("_rows")
+    (games,) = con.execute("SELECT count(DISTINCT game_id) FROM scored").fetchall()[0]
+    return games
+
+
 def validate(con: duckdb.DuckDBPyConnection, games: int) -> None:
     """Raise if a dataset looks wrong, before anything is written"""
     checks = {
@@ -371,6 +597,15 @@ def validate(con: duckdb.DuckDBPyConnection, games: int) -> None:
             SELECT count(*) = count(DISTINCT (as_of_date, player_id))
                 AND count(*) > 0
             FROM ratings_daily""",
+        "a log row per model, game and time": """
+            SELECT count(*) = count(DISTINCT (model, game_id, created))
+            FROM prediction_log""",
+        "logged predictions were made before their games": """
+            SELECT coalesce(bool_and(created < start_time), true)
+            FROM prediction_log""",
+        "logged minutes belong to logged predictions": """
+            SELECT count(*) = 0 FROM minutes_log m
+            ANTI JOIN prediction_log p USING (model, game_id, created)""",
         "ratings are plausible": """
             SELECT coalesce(bool_and(abs(o_rating) < 30 AND abs(d_rating) < 30
                 AND abs(o_prior) < 30 AND abs(d_prior) < 30
@@ -415,14 +650,13 @@ def seasons(root: Path, dataset: str) -> list[int]:
 
 def write_metadata(
     root: Path,
-    written: tuple[str, ...] | list[str],
-    about: dict[str, Any],
+    written: dict[str, dict[str, Any]],
     run: dict[str, Any],
 ) -> None:
     """
     metadata.json: per dataset, its seasons and when it was updated, with
-    `about` (commit, model, settings) for the ones just written and what
-    an earlier build recorded for the rest; and `run`
+    what `written` has (commit, model, settings) for the ones just written
+    and what an earlier build recorded for the rest; and `run`
     """
     path = metadata_path(root)
     before = json.loads(path.read_text()).get("datasets", {}) if path.exists() else {}
@@ -433,7 +667,7 @@ def write_metadata(
         if not found:
             continue
         entry = (
-            {"updated": now, **about}
+            {"updated": now, **written[dataset]}
             if dataset in written
             else {
                 k: v

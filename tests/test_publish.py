@@ -48,7 +48,14 @@ def test_ratings_keep_earlier_days(tmp_path):
     ]
 
 
-def tables(con, home_pts=110.0, minutes=240.0):
+def tables(con, home_pts=110.0, minutes=240.0, logged="2026-11-01 12:00:00+00"):
+    con.execute(f"""CREATE OR REPLACE TABLE prediction_log AS
+        SELECT model, 'g1' AS game_id, '{logged}'::TIMESTAMPTZ AS created,
+            '2026-11-02 00:00:00+00'::TIMESTAMPTZ AS start_time
+        FROM (VALUES ('rapm'), ('team')) v(model)""")
+    con.execute("""CREATE OR REPLACE TABLE minutes_log AS
+        SELECT 'rapm' AS model, 'g1' AS game_id,
+            '2026-11-01 12:00:00+00'::TIMESTAMPTZ AS created""")
     con.execute(f"""CREATE OR REPLACE TABLE predictions AS SELECT 'g1' AS game_id,
         'H' AS home_team_id, 'A' AS away_team_id, '{home_pts}'::DOUBLE AS home_pts,
         105.0 AS away_pts, 100.0 AS poss, 0.6 AS home_win_prob""")
@@ -71,6 +78,13 @@ def test_validate():
     tables(con, minutes=200)
     with pytest.raises(ValueError, match="add up to 240"):
         validate(con, 1)
+    tables(con, logged="2026-11-02 01:00:00+00")
+    with pytest.raises(ValueError, match="made before their games"):
+        validate(con, 1)
+    tables(con)
+    con.execute("INSERT INTO prediction_log SELECT * FROM prediction_log LIMIT 1")
+    with pytest.raises(ValueError, match="a log row per model, game and time"):
+        validate(con, 1)
 
 
 def test_metadata_and_catalog(tmp_path):
@@ -86,9 +100,9 @@ def test_metadata_and_catalog(tmp_path):
         )
         write(con, query, dataset_path(tmp_path, dataset, season))
     about = {"commit": "abc", "model": "rapm", "settings": {"ridge": 3000}}
-    write_metadata(tmp_path, ["predictions", "ratings_daily"], about, {"x": 1})
+    write_metadata(tmp_path, {"predictions": about, "ratings_daily": about}, {"x": 1})
     # a later build that only writes predictions keeps what ratings_daily had
-    write_metadata(tmp_path, ["predictions"], about | {"commit": "def"}, {"x": 2})
+    write_metadata(tmp_path, {"predictions": about | {"commit": "def"}}, {"x": 2})
 
     meta = json.loads(metadata_path(tmp_path).read_text())
     assert meta["x"] == 2

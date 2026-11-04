@@ -288,38 +288,13 @@ def run(
     )
     con.execute(f"""
         CREATE OR REPLACE TEMP TABLE predictions AS
-        WITH numbered AS (
-            -- each team's game number in the regular season
-            SELECT game_id, team_id, row_number() OVER (
-                PARTITION BY season, team_id ORDER BY game_date, game_id) AS n
-            FROM (
-                SELECT season, game_id, game_date, team_id FROM results
-                WHERE game_type = 'regular_season'
-                UNION ALL
-                SELECT season, game_id, game_date, opp_team_id FROM results
-                WHERE game_type = 'regular_season'
-            )
-        ), deadlines AS (
-            SELECT * FROM (VALUES {", ".join(f"({s}, DATE '{d}')" for s, d in TRADE_DEADLINES.items())})
-                v(season, deadline)
-        )
         SELECT '{rid}' AS run_id, r.season, r.game_id, r.game_date, r.game_type,
-            CASE
-                WHEN r.game_type IN ('playoffs', 'play_in') THEN 'playoffs'
-                WHEN r.game_type = 'regular_season'
-                    AND least(t.n, o.n) <= {EARLY_GAMES} THEN 'early'
-                WHEN r.game_type = 'regular_season'
-                    AND r.game_date > d.deadline THEN 'post_deadline'
-                ELSE 'mid'
-            END AS phase,
-            r.team_id, r.opp_team_id, r.home,
+            ph.phase, r.team_id, r.opp_team_id, r.home,
             p.pred_pts, p.pred_opp_pts, r.pts, r.opp_pts,
             p.pred_poss, (r.poss + r.opp_poss) / 2 AS poss
         FROM predicted p
         JOIN results r USING (game_id)
-        LEFT JOIN numbered t ON t.game_id = r.game_id AND t.team_id = r.team_id
-        LEFT JOIN numbered o ON o.game_id = r.game_id AND o.team_id = r.opp_team_id
-        LEFT JOIN deadlines d ON d.season = r.season
+        JOIN ({phases()}) ph USING (game_id)
         ORDER BY r.game_date, r.game_id
     """)
     con.unregister("predicted")
@@ -362,6 +337,40 @@ def run(
         con.execute(f"COPY ({query}) TO '{path}' (FORMAT parquet, COMPRESSION zstd)")
     con.unregister("scored")
     return rid
+
+
+def phases() -> str:
+    """SQL for each game in `results`' phase of the season: (game_id, phase)"""
+    deadlines = ", ".join(f"({s}, DATE '{d}')" for s, d in TRADE_DEADLINES.items())
+    return f"""
+        WITH numbered AS (
+            -- each team's game number in the regular season
+            SELECT game_id, team_id, row_number() OVER (
+                PARTITION BY season, team_id ORDER BY game_date, game_id) AS n
+            FROM (
+                SELECT season, game_id, game_date, team_id FROM results
+                WHERE game_type = 'regular_season'
+                UNION ALL
+                SELECT season, game_id, game_date, opp_team_id FROM results
+                WHERE game_type = 'regular_season'
+            )
+        ), deadlines AS (
+            SELECT * FROM (VALUES {deadlines}) v(season, deadline)
+        )
+        SELECT r.game_id,
+            CASE
+                WHEN r.game_type IN ('playoffs', 'play_in') THEN 'playoffs'
+                WHEN r.game_type = 'regular_season'
+                    AND least(t.n, o.n) <= {EARLY_GAMES} THEN 'early'
+                WHEN r.game_type = 'regular_season'
+                    AND r.game_date > d.deadline THEN 'post_deadline'
+                ELSE 'mid'
+            END AS phase
+        FROM results r
+        LEFT JOIN numbered t ON t.game_id = r.game_id AND t.team_id = r.team_id
+        LEFT JOIN numbered o ON o.game_id = r.game_id AND o.team_id = r.opp_team_id
+        LEFT JOIN deadlines d ON d.season = r.season
+    """
 
 
 def minutes_errors(
