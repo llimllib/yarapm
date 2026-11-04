@@ -29,6 +29,29 @@ def games_query(where: str = "true") -> str:
     """
 
 
+def schedule_query(where: str = "true") -> str:
+    """
+    nba.schedule's games of the types we model whose teams are set, for the
+    rows matching `where`, as `Game`'s columns plus `start_time` (UTC): from the
+    home team's side, or at a neutral site the team with the lower id's,
+    with `home` NULL, as `load_results` has them
+    """
+    types = ", ".join(f"'{t}'" for t in GAME_TYPES)
+    return f"""
+        SELECT game_id, season, game_date, game_type,
+            CASE WHEN neutral_site THEN least(home_team_id, away_team_id)
+                ELSE home_team_id END AS team_id,
+            CASE WHEN neutral_site THEN greatest(home_team_id, away_team_id)
+                ELSE away_team_id END AS opp_team_id,
+            CASE WHEN neutral_site THEN NULL ELSE true END AS home,
+            -- in UTC, without a zone: TIMESTAMPTZ needs pytz in Python
+            timezone('UTC', start_time) AS start_time
+        FROM nba.schedule
+        WHERE game_type IN ({types}) AND home_team_id IS NOT NULL
+            AND away_team_id IS NOT NULL AND ({where})
+    """
+
+
 def load_results(con: duckdb.DuckDBPyConnection, where: str = "true") -> None:
     """
     Temp table `results`: one row per game, from the home team's side (at a

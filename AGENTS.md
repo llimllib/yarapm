@@ -7,6 +7,7 @@ Commands (tools come from `mise.toml`):
 - `mise run test` / `mise run lint` (ruff format, ruff check, ty). CI runs both; keep them passing
 - `uv run python -m yarapm.segments [--season 2026 ...]` builds `out/segments/` (every season with play-by-play by default, ~20s), printing how many games each season keeps and why the rest are dropped
 - `uv run python -m yarapm.harness --model home|team|rapm|openrapm [--cadence weekly|daily] [--season 2021 ...] [--set name=value ...]` walks a model forward through the tuning seasons, writes `out/runs/{predictions,metrics}/run=<id>/`, and prints the metrics by phase. Models are registered in `yarapm.harness.models()`; a model only sees data through `History`, filtered to games before the fit date. Compare runs with `FROM read_parquet('out/runs/metrics/*/*.parquet', union_by_name = true)` (older runs may lack newer metrics)
+- `uv run python -m yarapm.predict [--date 2026-11-05] [--days 7] [--model rapm|team] [--no-segments]` rebuilds the current season's segments, fits a live model on the games before the date and predicts the games in `nba.schedule` from it
 
 `out/` is local and not committed. In a fresh checkout, run `yarapm.segments` before the harness: models only see segments if `out/segments/` exists. Code that isn't run with `-m` from the repo root (a scratch script in /tmp, say) needs `PYTHONPATH=.`, since the package isn't installed.
 
@@ -21,6 +22,7 @@ Commands (tools come from `mise.toml`):
 - `yarapm/prior.py`: the box-score prior (#7) and OpenRAPM as a prior (#9)
 - `yarapm/players.py`: the `rapm` model (#8), ratings × minutes + tempo + home court, and `openrapm` (#9), OpenRAPM's ratings through the same step
 - `yarapm/minutes.py`: minutes for those models, `--set minutes=actual|known|unknown`. `actual` is the minutes played (`History.actual_minutes`, a leak that isolates rating error); `known` projects minutes given who played (`History.active`, a leak standing in for injury reports, #10), the default; `unknown` projects who plays too (#11). Projected minutes are scored as `minutes_mae`
+- `yarapm/predict.py`: predictions for games not yet played (#26), from `nba.schedule` (`yarapm.games.schedule_query`). The live models are `rapm` with unknown availability and `team`; win probability uses a fixed spread, each model's margin RMSE on the tuning seasons (`SIGMA`). A fresh fit for a day matches the harness's daily prediction for it
 
 To tune, call `harness.load(con)` once and loop `harness.run(con, Model(...), list(harness.TUNING_SEASONS), "weekly")` in one process, comparing on the `all` phase; confirm the chosen settings with a `daily` run. Record the grid and results in the issue, and put the chosen defaults in the model with a note on how they were picked.
 
