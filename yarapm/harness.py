@@ -102,13 +102,18 @@ class Prediction(NamedTuple):
 
 class History:
     """
-    What a model may use when it's fit: everything before `cutoff`. Every
-    table a model reads goes through here, filtered on `game_date`
+    What a model may use when it's fit: everything before `cutoff`, in
+    `season`. Every table a model reads goes through here, filtered on
+    `game_date`
     """
 
-    def __init__(self, con: duckdb.DuckDBPyConnection, cutoff: date):
+    def __init__(
+        self, con: duckdb.DuckDBPyConnection, cutoff: date, season: int | None = None
+    ):
         self.con = con
         self.cutoff = cutoff
+        # None for every season in the data
+        self.season = season
 
     def _before(self, table: str) -> duckdb.DuckDBPyRelation:
         return self.con.sql(
@@ -124,6 +129,42 @@ class History:
     def segments(self) -> duckdb.DuckDBPyRelation:
         """`yarapm.segments`' rows"""
         return self._before("all_segments")
+
+    @property
+    def player_games(self) -> duckdb.DuckDBPyRelation:
+        """nba.player_game_logs' rows for the games in `results`"""
+        return self._before("player_games")
+
+    @property
+    def bio(self) -> duckdb.DuckDBPyRelation:
+        """
+        Each player's height and draft position, which don't change: one
+        row per player, from their latest season in nba.player_season_stats.
+        That can be after the cutoff, but both are known before a player's
+        first game
+        """
+        return self.con.sql("FROM bio")
+
+    def openrapm(self, season: int) -> duckdb.DuckDBPyRelation:
+        """
+        nba.openrapm's ratings for a season. OpenRAPM is fit on whole
+        seasons, so this season's uses games after the cutoff: a leak,
+        only for an optimistic baseline (#9)
+        """
+        return self.con.sql(f"FROM openrapm WHERE season = {int(season)}")
+
+    def actual_minutes(self, game_ids: list[str]) -> list[tuple[str, str, str, float]]:
+        """
+        (game_id, team_id, player_id, min) for every player who played in
+        `game_ids`. A deliberate leak, for games on or after the cutoff: it
+        tells a model who played and for how long, to measure rating error
+        on its own (#8) until minutes are projected (#10)
+        """
+        return self.con.execute(
+            """SELECT game_id, team_id, player_id, min FROM player_games
+            WHERE game_id IN (SELECT unnest(?::VARCHAR[])) AND min > 0""",
+            [game_ids],
+        ).fetchall()
 
 
 class Model(Protocol):
@@ -192,7 +233,7 @@ def run(
         ]
         days = sorted({g.game_date for g in games})
         for group in fit_days(days, cadence):
-            model.fit(History(con, group[0]))
+            model.fit(History(con, group[0], season))
             todo = [g for g in games if g.game_date in group]
             predicted = [Prediction(*p) for p in model.predict(todo)]
             if len(predicted) != len(todo):
@@ -328,16 +369,43 @@ def score(predictions: duckdb.DuckDBPyRelation) -> list[dict[str, Any]]:
 
 
 def load(con: duckdb.DuckDBPyConnection, out: Path = OUT) -> None:
-    """The tables `History` reads: `results`, and `all_segments` if built"""
+    """
+    The tables `History` reads: `results`, `player_games`, `bio`,
+    `openrapm`, and `all_segments` if built
+    """
     load_results(con)
+    con.execute("""
+        CREATE OR REPLACE TEMP TABLE player_games AS
+        SELECT * FROM nba.player_game_logs
+        WHERE game_id IN (SELECT game_id FROM results)
+    """)
+    con.execute("""
+        CREATE OR REPLACE TEMP TABLE bio AS
+        SELECT player_id,
+            arg_max(player_height_inches, season) AS height,
+            arg_max(draft_number, season) AS draft_number
+        FROM nba.player_season_stats
+        WHERE season_type = 'regular_season'
+        GROUP BY player_id
+    """)
+    con.execute("""
+        CREATE OR REPLACE TEMP TABLE openrapm AS
+        SELECT season, player_id, possessions, o_rating, d_rating FROM nba.openrapm
+    """)
     if (out / "segments").is_dir():
         read(con, "segments", out).create_view("all_segments", replace=True)
 
 
 def models() -> dict[str, type]:
     from yarapm.baselines import HomeCourt, TeamRatings
+    from yarapm.players import OpenRapm, PlayerRatings
 
-    return {"home": HomeCourt, "team": TeamRatings}
+    return {
+        "home": HomeCourt,
+        "team": TeamRatings,
+        "rapm": PlayerRatings,
+        "openrapm": OpenRapm,
+    }
 
 
 def setting(text: str) -> tuple[str, Any]:

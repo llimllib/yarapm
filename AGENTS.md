@@ -6,7 +6,7 @@ yarapm predicts the expected score of NBA games from player ratings (RAPM with a
 Commands (tools come from `mise.toml`):
 - `mise run test` / `mise run lint` (ruff format, ruff check, ty). CI runs both; keep them passing
 - `uv run python -m yarapm.segments [--season 2026 ...]` builds `out/segments/` (every season with play-by-play by default, ~20s), printing how many games each season keeps and why the rest are dropped
-- `uv run python -m yarapm.harness --model home|team [--cadence weekly|daily] [--season 2021 ...] [--set name=value ...]` walks a model forward through the tuning seasons, writes `out/runs/{predictions,metrics}/run=<id>/`, and prints the metrics by phase. Models are registered in `yarapm.harness.models()`; a model only sees data through `History`, filtered to games before the fit date. Compare runs with `FROM read_parquet('out/runs/metrics/*/*.parquet', union_by_name = true)` (older runs may lack newer metrics)
+- `uv run python -m yarapm.harness --model home|team|rapm|openrapm [--cadence weekly|daily] [--season 2021 ...] [--set name=value ...]` walks a model forward through the tuning seasons, writes `out/runs/{predictions,metrics}/run=<id>/`, and prints the metrics by phase. Models are registered in `yarapm.harness.models()`; a model only sees data through `History`, filtered to games before the fit date. Compare runs with `FROM read_parquet('out/runs/metrics/*/*.parquet', union_by_name = true)` (older runs may lack newer metrics)
 
 `out/` is local and not committed. In a fresh checkout, run `yarapm.segments` before the harness: models only see segments if `out/segments/` exists. Code that isn't run with `-m` from the repo root (a scratch script in /tmp, say) needs `PYTHONPATH=.`, since the package isn't installed.
 
@@ -17,6 +17,9 @@ Commands (tools come from `mise.toml`):
 - `yarapm/harness.py`: `Game`, `Prediction`, `History`, the `Model` protocol, `run()` and the metrics. Phases: `early`, `mid`, `post_deadline`, `playoffs`
 - `yarapm/fit.py`: `decay()` (half-life weights) and `weighted_ridge()`, shared by the models
 - `yarapm/tempo.py`, `yarapm/baselines.py`: adjusted tempo, and the `home` and `team` models
+- `yarapm/rapm.py`: the sparse ridge RAPM solver (#6), pulling each player toward a prior
+- `yarapm/prior.py`: the box-score prior (#7) and OpenRAPM as a prior (#9)
+- `yarapm/players.py`: the `rapm` model (#8), ratings × minutes + tempo + home court, and `openrapm` (#9), OpenRAPM's ratings through the same step. Until minutes are projected (#10), both use the minutes actually played (`History.actual_minutes`, a deliberate leak)
 
 To tune, call `harness.load(con)` once and loop `harness.run(con, Model(...), list(harness.TUNING_SEASONS), "weekly")` in one process, comparing on the `all` phase; confirm the chosen settings with a `daily` run. Record the grid and results in the issue, and put the chosen defaults in the model with a note on how they were picked.
 
@@ -27,6 +30,10 @@ Daily refits, 2021-2024 (the scoreboard is kept in #24):
 |---|---|---|---|---|
 | `home` (home court only) | 14.98 | 0.687 | 19.97 | |
 | `team` (KenPom-style) | 13.93 | 0.636 | 18.73 | 4.57 |
+| `openrapm` (last season's, actual minutes) | 13.84 | 0.624 | 18.58 | 4.57 |
+| `rapm`, plain (`prior_weight=0`, actual minutes) | 13.71 | 0.620 | 18.40 | 4.57 |
+| `rapm` with the box-score prior (actual minutes) | 13.62 | 0.613 | 18.40 | 4.57 |
+| `openrapm` (this season's: leaks, a ceiling) | 13.06 | 0.591 | 17.96 | 4.57 |
 
 ## Data
 Source data is nba_data's catalog (`https://basketball-data.billmill.org/nba/nba.duckdb`); its data dictionary is `docs/DATA_DICTIONARY.md` in https://github.com/llimllib/nba_data (often checked out at `../nba_data`). `yarapm.catalog.connect()` attaches it as `nba`, so source tables are always `nba.<table>`. Filter on `season` whenever you can: other filters read every season's file. What we build goes under `out/` (gitignored), one parquet file per season, via `write_season()` and `read()`.
