@@ -172,12 +172,14 @@ class ProjectedMinutes:
 def team_games(history: History) -> str:
     """SQL for each team's games before the cutoff, numbered from its first"""
     return f"""
-        SELECT team_id, game_id, row_number() OVER (
+        SELECT season, team_id, game_id, row_number() OVER (
             PARTITION BY team_id ORDER BY game_date, game_id) AS n
         FROM (
-            SELECT team_id, game_id, game_date FROM ({history.results.sql_query()})
+            SELECT season, team_id, game_id, game_date
+            FROM ({history.results.sql_query()})
             UNION ALL
-            SELECT opp_team_id, game_id, game_date FROM ({history.results.sql_query()})
+            SELECT season, opp_team_id, game_id, game_date
+            FROM ({history.results.sql_query()})
         )
     """
 
@@ -189,11 +191,12 @@ def availability(history: History) -> dict[tuple[int, int], float]:
     over the AVAILABILITY_SEASONS seasons before this one (or before the
     cutoff, with no season)
     """
+    # a condition on a season. The spots are in those seasons too: this
+    # season's first games would count last season's players as not playing
     seasons = (
-        "true"
+        "IS NOT NULL"
         if history.season is None
-        else f"season BETWEEN {history.season - AVAILABILITY_SEASONS}"
-        f" AND {history.season - 1}"
+        else f"BETWEEN {history.season - AVAILABILITY_SEASONS} AND {history.season - 1}"
     )
     rows = history.con.execute(f"""
         WITH tg AS ({team_games(history)}),
@@ -201,13 +204,14 @@ def availability(history: History) -> dict[tuple[int, int], float]:
             SELECT p.player_id, tg.team_id, tg.n
             FROM ({history.player_games.sql_query()}) p
             JOIN tg USING (game_id, team_id)
-            WHERE p.min > 0 AND {seasons}
+            WHERE p.min > 0 AND p.season {seasons}
         ), spots AS (
             SELECT t.team_id, t.n, a.player_id,
                 t.n - 1 - max(a.n) AS since, count(*) AS played
             FROM tg t
             JOIN played a ON a.team_id = t.team_id
                 AND a.n BETWEEN t.n - {ROSTER_GAMES} AND t.n - 1
+            WHERE t.season {seasons}
             GROUP BY t.team_id, t.n, a.player_id
         )
         SELECT since, s.played, count(*), count(a.n)

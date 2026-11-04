@@ -4,7 +4,7 @@ import duckdb
 import pytest
 
 from yarapm.harness import Game, History
-from yarapm.minutes import CAP, ProjectedMinutes, allocate, rosters
+from yarapm.minutes import CAP, ProjectedMinutes, allocate, availability, rosters
 
 
 def test_allocate_scales_to_240_and_caps():
@@ -19,24 +19,26 @@ def test_allocate_scales_to_240_and_caps():
     assert allocate({"a": 1, "b": 2}) == {"a": CAP, "b": CAP}
 
 
-def tables(con, games):
+def tables(con, games, season=2024):
     """
     `results` and `player_games` from games: (team, opp, {player: (min,
-    started)} for each team), a day apart
+    started)} for each team), a day apart from November 1st. Adds to them
+    if they exist
     """
     results, players = [], []
-    start = date(2023, 11, 1)
+    start = date(season - 1, 11, 1)
     for i, (team, opp, lineups) in enumerate(games):
-        game_id, day = f"g{i:03}", start + timedelta(days=i)
-        results.append((2024, game_id, day, "regular_season", team, opp, True))
+        game_id, day = f"g{season}{i:03}", start + timedelta(days=i)
+        results.append((season, game_id, day, "regular_season", team, opp, True))
         for t, lineup in lineups.items():
             for p, (m, started) in lineup.items():
-                players.append((2024, game_id, day, t, p, m, started))
-    con.execute("""CREATE TEMP TABLE results (season INTEGER, game_id VARCHAR,
-        game_date DATE, game_type VARCHAR, team_id VARCHAR, opp_team_id VARCHAR,
-        home BOOLEAN)""")
+                players.append((season, game_id, day, t, p, m, started))
+    con.execute("""CREATE TEMP TABLE IF NOT EXISTS results (season INTEGER,
+        game_id VARCHAR, game_date DATE, game_type VARCHAR, team_id VARCHAR,
+        opp_team_id VARCHAR, home BOOLEAN)""")
     con.executemany("INSERT INTO results VALUES (?, ?, ?, ?, ?, ?, ?)", results)
-    con.execute("""CREATE TEMP TABLE player_games (season INTEGER, game_id VARCHAR,
+    con.execute("""CREATE TEMP TABLE IF NOT EXISTS player_games (season INTEGER,
+        game_id VARCHAR,
         game_date DATE, team_id VARCHAR, player_id VARCHAR, min DOUBLE,
         started BOOLEAN)""")
     con.executemany("INSERT INTO player_games VALUES (?, ?, ?, ?, ?, ?, ?)", players)
@@ -111,3 +113,14 @@ def test_rosters_follow_trades():
     assert teams["C"]["a8"] == (0, 1)
     assert teams["A"]["a5"] == (2, 3)
     assert teams["A"]["a1"] == (0, 5)
+
+
+def test_availability_ignores_this_seasons_games():
+    con = duckdb.connect()
+    a = team(A_STARTERS, ["a6", "a7", "a8"])
+    tables(con, [("A", "B", {"A": a, "B": B})] * 12, season=2023)
+    before = availability(History(con, date(2023, 11, 1), 2024))
+    # a new roster this season: last season's players don't play
+    c = team(["c1", "c2", "c3", "c4", "c5"], ["c6", "c7", "c8"])
+    tables(con, [("A", "B", {"A": c, "B": B})] * 12, season=2024)
+    assert availability(History(con, date(2024, 1, 1), 2024)) == before
