@@ -45,15 +45,31 @@ and commit in `metadata`.
 game before that day. Since nba_data updates every four hours, the files
 can change during the day as a night's games come in.
 
+**History:** the daily datasets (`ratings_daily`, `team_ratings_daily`,
+`team_players_daily`) go back to 2018 (2017-18), so a player's or team's
+ratings can be followed across seasons. Every row is the current model's
+view of its day, fit only on the games before it, as if it had been run
+that day: when the model changes, every season is rebuilt with it, and a
+season's files never mix model versions (`model_version`). The first
+season rated is the first with two seasons of play-by-play before it,
+since the box-score prior learns from earlier seasons; nba_data's
+play-by-play starts in 2016 and is being backfilled toward 2010, and the
+history will start earlier as it lands. The first seasons rest on less
+data than later ones: their prior learned from fewer seasons, and their
+ratings from fewer games before them.
+
 ## Datasets
 
 ### `ratings_daily`
 
-Each player's ratings as of each game day of the season, and the latest
-build's day. Keyed by `season`, `as_of_date` and `player_id`. A day's
-ratings use the games before it, so they're what a prediction on that day
-used. Players are those on a team's roster as of the day (see `minutes`)
-or with possessions this season.
+Each player's ratings as of each game day of the season: for the current
+season, also the latest build's day, and for a finished one, the day after
+its last game (its final ratings, with the Finals). Keyed by `season`,
+`as_of_date` and `player_id`. A day's ratings use the games before it, so
+they're what a prediction on that day would use. Players are those on a
+team's roster as of the day (see `minutes`) or with possessions this
+season. There are no rows for the offseason: a player's ratings don't move
+without games, until a new season's prior.
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -63,17 +79,17 @@ or with possessions this season.
 | o_prior, d_prior | DOUBLE | The box-score prior the ratings are pulled toward. A player with no possessions in the fit is rated at their prior |
 | possessions | INTEGER | Offensive possessions on the floor this season before the day |
 | commit, settings | VARCHAR | The yarapm commit and model settings (JSON) that rated the day |
+| model_version | VARCHAR | A hash of the code and locked dependencies that rated the day: the same for every row of a season, and of every daily dataset's season |
 
-A day is rated once, by the first build on or after it that's missing it
-from any daily dataset (this one, `team_ratings_daily`,
-`team_players_daily`), which adds it to the ones missing it; the latest
-day is rated again by every build. Rows from an older model
-stay as they were, with its commit and settings.
+A build keeps the season's days if its files were built by its model
+version, rating the missing ones and its own day again, and rates every
+day if not; a backfill does the same for the finished seasons. The latest
+day changes with every build until the season moves on.
 
 ### `team_ratings_daily`
 
-Each team's rating as of each game day of the season and the latest
-build's day, at full strength and with today's expected lineup. Keyed by
+Each team's rating as of the same days as `ratings_daily`, at full
+strength and with that day's expected lineup. Keyed by
 `season`, `as_of_date` and `team_id`. A team's rating is its players'
 ratings (`ratings_daily`) weighted by their share of its minutes, as the
 predictions weigh them; `team_players_daily` has the lineups.
@@ -99,7 +115,7 @@ same column rather than its full strength to its today.
 | off, def, net | DOUBLE | The same with today's lineup |
 | league_average | DOUBLE | Points per 100 possessions the average team scores against the average team, with today's lineups: a team's offense today is `league_average + off` points per 100 against an average defense, on a neutral court |
 | roster | VARCHAR | Where the full-strength players come from: `played`, this season's games. Will be `rosters_daily` once nba_data publishes rosters |
-| commit, settings | VARCHAR | As in `ratings_daily` |
+| commit, settings, model_version | VARCHAR | As in `ratings_daily` |
 
 ```sql
 -- teams at full strength today, and how far each is from it
@@ -123,6 +139,7 @@ Each team's `full_min` and `min` add up to 240.
 | full_min | DOUBLE | Minutes at full strength. 0 for a player only in today's lineup (one from late last season with a small chance of playing, say) or left out at full strength by the players ahead of him |
 | min, play_prob | DOUBLE | Today's expected minutes and chance of playing, as in `minutes`. 0 for a player who isn't on the team's roster as `minutes` has it |
 | o_rating, d_rating | DOUBLE | As in `ratings_daily` that day |
+| model_version | VARCHAR | As in `ratings_daily` |
 
 ```sql
 -- who a team is missing today: big minutes at full strength, few today
@@ -249,6 +266,7 @@ A table in the catalog, one row per dataset, also published as
 | updated | TIMESTAMPTZ | When a build last wrote it |
 | commit | VARCHAR | The yarapm commit that wrote it, with `-dirty` if it had uncommitted changes |
 | model, settings | VARCHAR | The model and its settings (JSON). The logs and `live_metrics` have both models, so no settings: they're in each row |
+| model_version | VARCHAR | The model version that last wrote it (see `ratings_daily`) |
 
 `metadata.json` has the table's rows keyed by dataset, with times in UTC
 ISO 8601, and three more keys: `as_of_date`, the latest build's day;
