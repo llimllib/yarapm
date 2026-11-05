@@ -82,7 +82,7 @@ jobs:
       - name: Purge the CDN
         if: steps.current.outputs.skip != 'true'
         run: &purge |
-          curl -sf -X DELETE \
+          curl -sS --fail-with-body -X DELETE \
             -H "Authorization: Bearer $DO_CDN_API_KEY" \
             -H "Content-Type: application/json" \
             -d '{"files": ["yarapm/*"]}' \
