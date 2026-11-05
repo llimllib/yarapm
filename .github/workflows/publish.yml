@@ -2,7 +2,9 @@ name: Publish
 
 # Predicts the upcoming games and publishes the datasets (yarapm.publish,
 # docs/DATA.md) to the yarapm/ prefix of the basketball-data Space, after
-# every nba_data update (#28)
+# every nba_data update (#28). Then the backfill job rebuilds the finished
+# seasons' daily datasets if the model version has changed since they were
+# built (#35): a no-op otherwise
 
 on:
   # sent by nba_data's update.yml once its catalog is published
@@ -14,6 +16,11 @@ on:
     - cron: "17 5 * * *"
   # always builds
   workflow_dispatch:
+    inputs:
+      force:
+        description: Refit every finished season, even if built by this model version (after nba_data corrects old games)
+        type: boolean
+        default: false
 
 concurrency:
   group: publish
@@ -38,17 +45,21 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      built: ${{ steps.current.outputs.skip != 'true' }}
     steps:
       - uses: actions/checkout@v7
 
       # installs python, uv, ruff and ty from mise.toml
       - uses: jdx/mise-action@v5
 
-      # ratings_daily and the logs keep what earlier builds wrote, so start
-      # from the bucket's files (the build refuses to run without them, if
-      # metadata.json lists them). sync succeeds when there are none yet
+      # the logs keep what earlier builds wrote, the daily datasets keep the
+      # days this model version has rated, and the catalog lists the
+      # mirror's seasons, so start from the bucket's files (the build
+      # refuses to run without them, if metadata.json lists them). sync
+      # succeeds when there are none yet
       - name: Download the published files
-        run: aws s3 sync "s3://$BUCKET/yarapm/" out/publish/yarapm/ --exclude 'yarapm.duckdb*' --no-progress
+        run: &download aws s3 sync "s3://$BUCKET/yarapm/" out/publish/yarapm/ --exclude 'yarapm.duckdb*' --no-progress
         env: &spaces
           AWS_ACCESS_KEY_ID: ${{ secrets.DO_SPACES_ACCESS_KEY }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.DO_SPACES_SECRET }}
@@ -74,7 +85,7 @@ jobs:
       # catalog doesn't have
       - name: Upload
         if: steps.current.outputs.skip != 'true'
-        run: aws s3 sync out/publish/ "s3://$BUCKET/" --acl public-read --cache-control "$CACHE_CONTROL" --no-progress --exclude '*' --include '*.parquet'
+        run: &upload aws s3 sync out/publish/ "s3://$BUCKET/" --acl public-read --cache-control "$CACHE_CONTROL" --no-progress --exclude '*' --include '*.parquet'
         env: *spaces
 
       # the catalog's views read the files through the CDN when they're
@@ -96,7 +107,7 @@ jobs:
       # in nba_data (its #95)
       - name: Build and upload the catalog
         if: steps.current.outputs.skip != 'true'
-        run: |
+        run: &catalog |
           uv run python -m yarapm.publish catalog --url "$URL"
           aws s3 cp out/publish/yarapm/yarapm.duckdb "s3://$BUCKET/yarapm/yarapm.duckdb" --acl public-read --cache-control "$CACHE_CONTROL" --no-progress
           aws s3 cp - "s3://$BUCKET/yarapm/yarapm.duckdb.wal" --acl public-read --cache-control "$CACHE_CONTROL" --no-progress < /dev/null
@@ -110,7 +121,7 @@ jobs:
 
       - name: Verify
         if: steps.current.outputs.skip != 'true'
-        run: uv run python -m yarapm.publish verify --url "$URL"
+        run: &verify uv run python -m yarapm.publish verify --url "$URL"
 
       # comment on the open failure issue, or file one, so a run of
       # failures doesn't open an issue each
@@ -118,7 +129,7 @@ jobs:
         if: failure()
         uses: actions/github-script@v9.0.0
         with:
-          script: |
+          script: &notify |
             const issueTitle = 'Publish workflow failed';
             const issues = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
@@ -143,3 +154,64 @@ jobs:
                 body: `Workflow run failed: ${runUrl}\n\nThe bucket keeps the last good files. Check the run's logs.`
               });
             }
+
+  # the finished seasons' daily datasets, rebuilt when the model version
+  # changes (#35): about 20 minutes for every season, so a job of its own
+  # after the predictions are published. Seasons built by this version are
+  # skipped, so it's usually done in a minute. Only after a build: a season
+  # goes stale when the model version changes, which `current` sees, or when
+  # it finishes, which comes with new data
+  backfill:
+    needs: publish
+    if: needs.publish.outputs.built == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: jdx/mise-action@v5
+
+      # the publish job's files, just uploaded
+      - name: Download the published files
+        run: *download
+        env: *spaces
+
+      # rebuilds every season's segments only if a season needs fitting
+      - name: Backfill
+        id: backfill
+        run: |
+          set -o pipefail
+          uv run python -m yarapm.publish backfill ${{ inputs.force && '--force' || '' }} | tee backfill.log
+          if grep -q '^wrote ' backfill.log; then
+            echo "wrote=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload
+        if: steps.backfill.outputs.wrote == 'true'
+        run: *upload
+        env: *spaces
+
+      - name: Purge the CDN
+        if: steps.backfill.outputs.wrote == 'true'
+        run: *purge
+        env: *cdn
+
+      - name: Build and upload the catalog
+        if: steps.backfill.outputs.wrote == 'true'
+        run: *catalog
+        env: *spaces
+
+      - name: Purge the CDN again, for the catalog
+        if: steps.backfill.outputs.wrote == 'true'
+        run: *purge
+        env: *cdn
+
+      - name: Verify
+        if: steps.backfill.outputs.wrote == 'true'
+        run: *verify
+
+      - name: Notify on failure
+        if: failure()
+        uses: actions/github-script@v9.0.0
+        with:
+          script: *notify
