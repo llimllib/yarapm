@@ -30,6 +30,8 @@ Commands (tools come from `mise.toml`):
 
 To tune, call `harness.load(con)` once and loop `harness.run(con, Model(...), list(harness.TUNING_SEASONS), "weekly")` in one process, comparing on the `all` phase; confirm the chosen settings with a `daily` run. Record the grid and results in the issue, and put the chosen defaults in the model with a note on how they were picked.
 
+The segments grow as nba_data backfills play-by-play (2016 on, so far), and the box-score prior is fit to every earlier season with segments, so results move when seasons are added. The results below used segments from 2019 on. Judge an experiment against a baseline run on the same segments, not against these tables (#32).
+
 ## Results so far
 Daily refits, 2021-2024 (the scoreboard is kept in #24):
 
