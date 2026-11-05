@@ -141,12 +141,12 @@ home against New York, fit on every game through June 12.
 
 | | Spurs | Knicks |
 |:--|--:|--:|
-| league level, $\ell$ | 107.80 | 107.80 |
-| playoff term, $\pi$ | $-3.86$ | $-3.86$ |
+| league level, $\ell$ | 105.38 | 105.38 |
+| playoff term, $\pi$ | $-3.93$ | $-3.93$ |
 | home court, $\pm\eta$ | $+0.93$ | $-0.93$ |
-| own offense, $O$ | $+13.54$ | $+13.15$ |
-| opponent's defense, $-D$ | $-2.66$ | $-6.95$ |
-| points per 100 possessions | 115.75 | 109.21 |
+| own offense, $O$ | $+14.22$ | $+13.73$ |
+| opponent's defense, $-D$ | $-0.84$ | $-5.06$ |
+| points per 100 possessions | 115.76 | 109.19 |
 | expected possessions, $P$ | 96.2 | 96.2 |
 | **expected points** | **111.3** | **105.0** |
 | actual points | 90 | 94 |
@@ -157,10 +157,23 @@ games before June 13, 2026, built up term by term from
 
 The Spurs' offense rates slightly better than the Knicks', and their
 defense much better: Wembanyama alone, projected for 37 minutes with a
-defensive rating of $+6.8$, contributes $5 \times \tfrac{37.1}{240} \times
-6.8 \approx 5.3$ points per 100 to it. With home court, the model made
+defensive rating of $+6.3$, contributes $5 \times \tfrac{37.1}{240} \times
+6.3 \approx 4.9$ points per 100 to it. With home court, the model made
 San Antonio a 6.3-point favorite, and a 68% chance to win (@ch:evaluation
 explains the conversion).
+
+::: {.remark #rem:terms}
+The individual terms in @tbl:game5 are less stable than their sum. While
+this chapter was being written, nba_data added four earlier seasons of
+play-by-play, and the box-score prior learned from them. Refit, the
+league level for this game fell from 107.8 to 105.4, while both teams'
+offensive strengths rose by about 0.6 and their defensive strengths fell
+by about 1.8, which together make up the 2.4. The predicted scores
+changed by a hundredth of a point. This is @prop:singular at work:
+shifting the ratings one way and the level the other predicts the same
+scores, and the data only pins down the combination. Here the prior,
+not the data, decided where the level sits.
+:::
 
 The Knicks won by four. The game was slower than predicted, about 90
 possessions to 96, and both offenses far worse: the Spurs scored 100 per

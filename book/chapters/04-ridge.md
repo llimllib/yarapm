@@ -179,11 +179,11 @@ with their own penalties:
   from season to season (@fig:league).
 - **Home court**: $+1$ in the rows of the home team's offense and $-1$
   in the away team's, $0$ at a neutral site. Unpenalized. In the April
-  2026 fits, it's 0.92 points per 100 possessions each way, so home court
-  is worth about $2 \times 0.92 = 1.8$ points per 100, or close to two
+  2026 fits, it's 0.93 points per 100 possessions each way, so home court
+  is worth about $2 \times 0.93 = 1.9$ points per 100, or close to two
   points a game.
 - **Playoffs**: $1$ in playoff and play-in rows. Unpenalized, and
-  $-3.65$ points per 100 in the same fits: playoff offense is less
+  $-3.71$ points per 100 in the same fits: playoff offense is less
   efficient, as the Finals clincher of @ch:question suggested.
 
 One more detail. Segments with no possessions (@fig:segment-possessions)
