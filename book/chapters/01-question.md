@@ -3,13 +3,15 @@ title: The Question
 label: ch:question
 ---
 
-On the morning of a game day we know every game played so far: who played
-in it, for how long, and what happened while they were on the floor. Two
-teams, $A$ and $B$, play tonight. How many points should we expect each of
-them to score?
+On June 13, 2026, the New York Knicks won the NBA championship in San
+Antonio, 94–90, taking the Finals four games to one. On the morning of
+that game we knew every game played so far that season: who played in it,
+for how long, and what happened while they were on the floor. How many
+points should we have expected each team to score?
 
-That is the whole question this book answers. Everything else, the
-ratings, the priors, the projected minutes, is there to answer it well. We
+That is the whole question this book answers, for every game on every
+day. Everything else, the ratings, the priors, the projected minutes, is
+there to answer it well. We
 start by making the question precise, then split it into two smaller ones
 that are easier to answer, and end the chapter with a map of the rest of
 the book.
@@ -43,7 +45,10 @@ than it is, and the program is built so that it can't (@sec:honesty).
 
 A basketball game is a sequence of possessions. One team has the ball
 until it scores, misses and the other team rebounds, or turns it over;
-then the other team has it.
+then the other team has it. A miss that the shooting team rebounds itself
+doesn't end anything: the possession goes on, and a team that misses
+three times and scores on a putback has had one possession, worth two
+points.
 
 ::: {.definition #def:possession title="Possession"}
 A team's *possession* starts when it gains control of the ball and ends
@@ -61,13 +66,23 @@ game's *pace*. Then the score splits into a product:
 $$
 S_A = \frac{P \, e_A}{100}, \qquad S_B = \frac{P \, e_B}{100}.
 $$ {#eq:score}
+In the Finals clincher, San Antonio had 90 possessions and scored 90
+points, an efficiency of 100.0, and New York scored 94 on 91, or 103.3.
+Both are far below the league's regular-season average of 114.5, and so
+is the pace: about 90 possessions against the league's 100. Finals games
+are slow, and Finals defenses are good.
+
 This is an identity, not a model: any score can be written this way. Its
 value is that the two factors depend on different things. The pace $P$
 belongs to the game, since both teams share the same possessions, and it
 depends on how fast both teams like to play. The efficiency $e_A$ depends
 on how good $A$'s offense is and how good $B$'s defense is. So we can
 predict them separately: pace from how fast the two teams' games have
-been, and efficiency from the players on the floor.
+been, and efficiency from the players on the floor. In 2026, Miami played
+the fastest, at 104.1 possessions per 48 minutes, and Boston the slowest,
+at 95.4; but Boston had the best offense, 119.5 points per 100
+possessions, so the slow pace wasn't hurting it. The best defense was
+Detroit's, allowing 108.8.
 
 ![Pace and efficiency of the league, 2016–2026: (a) possessions per 48
 minutes, per team, and (b) points per 100 possessions. The pace has
@@ -99,6 +114,18 @@ a team isn't a fixed thing. A star sits out with a sprained ankle, a
 trade sends two starters away, a coach rests everyone on the second night
 of a back-to-back. A team's rating is an average over the lineups it has
 used, and tonight's may be different.
+
+Golden State in 2026 is a clean example. Stephen Curry played 43 of the
+Warriors' 82 regular-season games. They outscored their opponents by 4.0
+points a game when Curry played and were outscored by 5.5 when Curry
+didn't.^[A raw with-and-without split like this isn't a fair
+measure of a player: other players were hurt at the same time, the
+schedule differed, and 39 games is a small sample. @ch:regression is
+about doing it properly. But the size of the swing is the point here.] A
+team rating sees a team that's about even, $-0.5$ a game, and predicts
+every game as if the Warriors were that team. They never were: on any
+given night they were either a good team or a bad one, and whether Curry
+was on the injury report said which.
 
 So yarapm rates players instead, and builds each team from the players
 expected to play tonight, weighted by how many minutes each will play. A

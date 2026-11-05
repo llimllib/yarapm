@@ -10,6 +10,7 @@ text quotes from a figure is printed, so a rerun can be checked against
 the text. The SVGs are committed: the book's build doesn't run this.
 """
 
+import math
 import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -320,6 +321,296 @@ def league() -> Svg:
     b.line(seasons, rtg)
     b.points(seasons, rtg, fill=PAPER, stroke=INK)
     s.text(620, 14, "(b) efficiency", italic=True, anchor="end", size=12)
+    return s
+
+
+# chapter 2
+
+FINALS = "0042500405"  # 2026 Finals, Game 5: New York 94, San Antonio 90
+
+
+@figure("timeline")
+def timeline() -> Svg:
+    """Who was on the floor in Game 5 of the 2026 Finals, and the margin"""
+    from yarapm.catalog import read
+
+    con = connect()
+    stints = con.execute(f"""
+        SELECT t.nba_abbrev, p.name, r.in_time / 60, r.out_time / 60
+        FROM nba.game_rotations r
+        JOIN nba.players p USING (player_id)
+        JOIN nba.team_seasons t ON t.season = 2026 AND t.team_id = r.team_id
+        WHERE r.season = 2026 AND r.game_id = '{FINALS}'
+    """).fetchall()
+    read(con, "segments", ROOT / "out").create_view("seg")
+    margin = con.execute(f"""
+        SELECT end_time / 60, sum(CASE WHEN t.nba_abbrev = 'NYK' THEN pts ELSE -pts END)
+            OVER (ORDER BY seg)
+        FROM (SELECT seg, end_time, off_team_id, pts FROM seg
+              WHERE season = 2026 AND game_id = '{FINALS}')
+        JOIN nba.team_seasons t ON t.season = 2026 AND t.team_id = off_team_id
+        ORDER BY seg
+    """).fetchall()
+    # one point per segment end, the margin after both teams' rows
+    by_time: dict[float, float] = {}
+    for t, m in margin:
+        by_time[t] = m
+    times = [0.0, *by_time]
+    margins = [0.0, *by_time.values()]
+    bounds = sorted({t for _, _, a, b in stints for t in (a, b)})
+    print(f"timeline: {len(bounds) - 1} segments, final margin {margins[-1]:+.0f}")
+
+    minutes: dict[tuple[str, str], float] = {}
+    for team, name, a, b in stints:
+        minutes[team, name] = minutes.get((team, name), 0) + b - a
+    rows = {
+        team: sorted((n for t, n in minutes if t == team), key=lambda n: -minutes[team, n])
+        for team in ("NYK", "SAS")
+    }
+    s = Svg(640, 470, "The 2026 Finals clincher: the Knicks' lead over the game, and when each player was on the floor")
+    lo = 5 * math.floor((min(margins) - 1) / 5)
+    hi = 5 * math.ceil((max(margins) + 1) / 5)
+    print(f"timeline: margin from {min(margins):+.0f} to {max(margins):+.0f}")
+    m = Axes(s, 130, 20, 490, 90, (0, 48), (lo, hi))
+    s.text(20, m.py(hi) + 10, "NYK ahead", size=10, italic=True, fill=FAINT)
+    s.text(20, m.py(lo), "SAS ahead", size=10, italic=True, fill=FAINT)
+    s.line(m.x, m.py(0), m.x + m.w, m.py(0), stroke=FAINT, width=0.6)
+    for q in (12, 24, 36):
+        s.line(m.px(q), 14, m.px(q), 452, stroke=FAINT, width=0.6, dash="2 3")
+    # the margin is a step function: it changes within segments, but we
+    # only know it at their ends
+    m.line(times, margins, width=1.3)
+    for tick in range(lo, hi + 1, 5):
+        s.line(m.x - 4, m.py(tick), m.x, m.py(tick))
+        s.text(m.x - 7, m.py(tick) + 4, f"{tick:+d}" if tick else "0", anchor="end", size=10)
+
+    y = 132
+    row = 14.5
+    for team, fill in (("NYK", DARK_GREY), ("SAS", "url(#hatch)")):
+        s.text(20, y + 9, team, size=11, italic=True)
+        for name in rows[team]:
+            last = name.split(" ", 1)[-1]
+            s.text(m.x - 8, y + 10, esc(last), size=10, anchor="end")
+            for t, n, a, b in stints:
+                if t == team and n == name:
+                    s.rect(m.px(a), y + 2, m.px(b) - m.px(a), row - 4, fill=fill, width=0.6)
+            y += row
+        y += 10
+    for q, label in ((6, "1st"), (18, "2nd"), (30, "3rd"), (42, "4th")):
+        s.text(m.px(q), 464, f"{label} quarter", size=10, anchor="middle", italic=True, fill=FAINT)
+    for b in bounds:
+        s.line(m.px(b), 124, m.px(b), 128, stroke=INK, width=0.6)
+    return s
+
+
+@figure("segment-possessions")
+def segment_possessions() -> Svg:
+    """How many possessions an offense has in a segment, 2026"""
+    from yarapm.catalog import read
+
+    con = connect()
+    read(con, "segments", ROOT / "out").create_view("seg")
+    rows = con.execute("""
+        SELECT least(poss, 12), count(*) FROM seg WHERE season = 2026
+        GROUP BY 1 ORDER BY 1
+    """).fetchall()
+    total = sum(n for _, n in rows)
+    for p, n in rows:
+        print(f"segment possessions {p}{'+' if p == 12 else ''}: {n / total:.1%}")
+    s = Svg(640, 200, "Bar chart: most segments are short; a quarter have one possession, and few have more than six")
+    a = Axes(s, 70, 15, 540, 140, (-0.6, 12.6), (0, 0.25))
+    a.frame([], [0, 0.05, 0.10, 0.15, 0.20, 0.25], "possessions in the segment, for one offense", "share of segments", yfmt=lambda v: f"{v:.0%}")
+    for p, n in rows:
+        x0 = a.px(p - 0.4)
+        s.rect(x0, a.py(n / total), a.px(p + 0.4) - x0, a.py(0) - a.py(n / total), fill=GREY, width=0.8)
+        s.text(a.px(p), a.py(0) + 16, f"{p}+" if p == 12 else str(p), anchor="middle")
+    return s
+
+
+# chapters 3 and 4
+
+_FITS: dict = {}
+
+
+def season_fits(season: int = 2026):
+    """
+    Plain RAPM on one season's segments, intercept only, with a ridge of 1
+    possession (nearly least squares) and of 3000 (yarapm's): each
+    player's total rating and possessions, by fit
+    """
+    if season in _FITS:
+        return _FITS[season]
+    import numpy as np
+
+    from yarapm import rapm
+    from yarapm.catalog import read
+
+    con = connect()
+    read(con, "segments", ROOT / "out").create_view("seg")
+    t = con.sql(
+        f"SELECT off_player_ids, def_player_ids, poss, pts FROM seg WHERE season = {season}"
+    ).to_arrow_table()
+    rows = rapm.Lineups.from_ids(
+        t["off_player_ids"].combine_chunks(),
+        t["def_player_ids"].combine_chunks(),
+        t["poss"].to_numpy(),
+        t["pts"].to_numpy(),
+        np.ones(len(t)),
+        np.ones((len(t), 1)),
+    )
+    k = len(rows.players)
+    poss = np.zeros(k)
+    np.add.at(poss, rows.off.ravel(), np.repeat(rows.poss, 5))
+    has = rows.poss > 0
+    sub = rapm.Lineups(rows.players, rows.off[has], rows.dfn[has], rows.poss[has],
+                       rows.pts[has], rows.weight[has], rows.covariates[has])
+    X = rapm.design(sub)
+    w = sub.poss
+    y = 100 * sub.pts / sub.poss
+    A = (X.T @ X.multiply(w[:, None])).toarray()
+    b = X.T @ (w * y)
+    out = {}
+    for ridge in (1.0, 3000.0):
+        penalty = np.r_[1e-9, np.full(2 * k, ridge)]
+        x = np.linalg.solve(A + np.diag(penalty), b)
+        out[ridge] = x[1 : 1 + k] + x[1 + k :]
+    _FITS[season] = (rows.players, poss, out)
+    return _FITS[season]
+
+
+def rating_scatter(svg: Svg, a: Axes, poss, rating, label: str):
+    a.frame([0, 2000, 4000, 6000, 8000], [-40, -20, 0, 20, 40], "offensive possessions played", "rating, points per 100",
+            xfmt=lambda v: f"{v:,.0f}", yfmt=lambda v: f"{v:+.0f}" if v else "0")
+    svg.line(a.x, a.py(0), a.x + a.w, a.py(0), stroke=FAINT, width=0.6)
+    lo, hi = a.ylim
+    for p, r in zip(poss, rating):
+        if lo <= r <= hi:
+            svg.circle(a.px(p), a.py(r), 1.8, fill="none", stroke=INK)
+        else:
+            y = a.py(hi) + 3 if r > hi else a.py(lo) - 3
+            svg.circle(a.px(p), y, 1.8, fill=INK)
+    svg.text(a.x + a.w, a.y + 4, label, italic=True, anchor="end", size=12)
+
+
+@figure("least-squares")
+def least_squares() -> Svg:
+    """Nearly unpenalized ratings against possessions, 2026"""
+    import numpy as np
+
+    players, poss, fits = season_fits()
+    r = fits[1.0]
+    few, many = poss < 500, poss >= 4000
+    print(f"least squares: {len(players)} players; sd of rating {np.std(r[few]):.1f} under 500 possessions, {np.std(r[many]):.1f} over 4000")
+    print(f"least squares: {(np.abs(r) > 40).sum()} players beyond ±40, max {r.max():+.1f}, min {r.min():+.1f}")
+    s = Svg(640, 260, "Scatter plot: nearly unpenalized ratings fan out wildly for players with few possessions")
+    a = Axes(s, 70, 15, 540, 200, (0, 8000), (-40, 40))
+    rating_scatter(s, a, poss, r, "λ = 1 possession")
+    return s
+
+
+@figure("eigenvalues")
+def eigenvalues() -> Svg:
+    """The eigenvalues of XᵀWX for 2026, on a log scale"""
+    import numpy as np
+
+    from yarapm import rapm
+    from yarapm.catalog import read
+
+    con = connect()
+    read(con, "segments", ROOT / "out").create_view("seg")
+    t = con.sql("SELECT off_player_ids, def_player_ids, poss, pts FROM seg WHERE season = 2026 AND poss > 0").to_arrow_table()
+    rows = rapm.Lineups.from_ids(t["off_player_ids"].combine_chunks(), t["def_player_ids"].combine_chunks(),
+                                 t["poss"].to_numpy(), t["pts"].to_numpy(), np.ones(len(t)), np.ones((len(t), 1)))
+    X = rapm.design(rows)
+    A = (X.T @ X.multiply(rows.poss[:, None])).toarray()
+    ev = np.sort(np.linalg.eigvalsh(A))
+    print(f"eigenvalues: {len(ev)}; {(ev < 1e-6).sum()} zero, then {ev[2]:.2f}; largest {ev[-1]:,.0f}; "
+          f"{(ev < 100).sum()} under 100, {(ev < 1000).sum()} under 1000; condition without the zeros {ev[-1] / ev[2]:,.0f}")
+    s = Svg(640, 240, "The eigenvalues of the normal equations, sorted: two are zero, and they range over five orders of magnitude")
+    a = Axes(s, 70, 15, 540, 175, (0, len(ev)), (0, 6))
+    a.frame([0, 200, 400, 600, 800, 1000], [0, 1, 2, 3, 4, 5, 6], "eigenvalues in increasing order", "eigenvalue",
+            xfmt=lambda v: f"{v:,.0f}", yfmt=lambda v: ["1", "10", "100", "1,000", "10⁴", "10⁵", "10⁶"][int(v)])
+    pts = [(i, math.log10(e)) for i, e in enumerate(ev) if e > 1e-6]
+    a.line([p[0] for p in pts], [p[1] for p in pts], width=1.4)
+    s.circle(a.px(0), a.py(0) - 3, 2.4)
+    s.circle(a.px(1), a.py(0) - 3, 2.4)
+    s.text(a.px(8), a.py(0) - 8, "two zeros", size=10.5, italic=True)
+    s.line(a.x, a.py(math.log10(3000)), a.x + a.w, a.py(math.log10(3000)), stroke=FAINT, width=0.8, dash="4 3")
+    s.text(a.x + a.w, a.py(math.log10(3000)) - 5, "λ = 3000", size=10.5, italic=True, anchor="end", fill=FAINT)
+    return s
+
+
+@figure("ridge")
+def ridge() -> Svg:
+    """Ridge ratings against possessions, 2026, on the axes of least-squares"""
+    import numpy as np
+
+    players, poss, fits = season_fits()
+    r = fits[3000.0]
+    few, many = poss < 500, poss >= 4000
+    print(f"ridge: sd of rating {np.std(r[few]):.2f} under 500 possessions, {np.std(r[many]):.2f} over 4000; range {r.min():+.1f} to {r.max():+.1f}")
+    s = Svg(640, 260, "Scatter plot: with a ridge penalty, ratings of players with few possessions collapse to zero")
+    a = Axes(s, 70, 15, 540, 200, (0, 8000), (-40, 40))
+    rating_scatter(s, a, poss, r, "λ = 3000 possessions")
+    return s
+
+
+@figure("shrinkage")
+def shrinkage() -> Svg:
+    """The share of the data's estimate kept, n / (n + λ)"""
+    s = Svg(640, 230, "Curves of n over n plus lambda for three penalties: the larger the penalty, the more possessions it takes to trust the data")
+    a = Axes(s, 70, 15, 540, 165, (0, 20000), (0, 1))
+    a.frame([0, 5000, 10000, 15000, 20000], [0, 0.25, 0.5, 0.75, 1], "possessions of data, n", "weight on the data",
+            xfmt=lambda v: f"{v:,.0f}", yfmt=lambda v: f"{v:g}")
+    xs = [i * 100 for i in range(201)]
+    for lam, dash, label_x in ((1000, None, 2600), (3000, "6 3", 7800), (10000, "2 3", 15500)):
+        ys = [x / (x + lam) for x in xs]
+        a.line(xs, ys, dash=dash)
+        y = label_x / (label_x + lam)
+        s.text(a.px(label_x) + 4, a.py(y) + 16, f"λ = {lam:,}", size=10.5, italic=True)
+    s.line(a.x, a.py(0.5), a.x + a.w, a.py(0.5), stroke=FAINT, width=0.6, dash="1 3")
+    return s
+
+
+@figure("valley")
+def valley() -> Svg:
+    """
+    Contours of the least squares objective for two players who mostly play
+    together, and of the ridge objective
+    """
+    import numpy as np
+
+    m, a_, b_ = 2963, 355, 2359  # Braun and Jokić, 2026
+    A = np.array([[m + b_, m], [m, m + a_]])  # (Jokić, Braun)
+    est = np.array([14.0, 2.6])
+    lam = 3000
+    ridge_est = np.linalg.solve(A + lam * np.eye(2), A @ est)
+    print(f"valley: eigenvalues {np.linalg.eigvalsh(A).round(0)}, ridge estimate {ridge_est.round(2)}")
+    s = Svg(640, 300, "Two contour plots: least squares has a long thin valley along which two teammates' ratings trade off; the ridge penalty rounds it into a bowl near zero")
+
+    def panel(x0, M, center, title, mark):
+        ax = Axes(s, x0, 22, 230, 230, (-10, 25), (-10, 25))
+        ax.frame([-10, 0, 10, 20], [-10, 0, 10, 20], "Jokić, points per 100", "Braun, points per 100",
+                 xfmt=lambda v: f"{v:+.0f}" if v else "0", yfmt=lambda v: f"{v:+.0f}" if v else "0")
+        s.line(ax.px(0), ax.py(-10), ax.px(0), ax.py(25), stroke=FAINT, width=0.5)
+        s.line(ax.px(-10), ax.py(0), ax.px(25), ax.py(0), stroke=FAINT, width=0.5)
+        vals, vecs = np.linalg.eigh(M)
+        for level in (2e4, 8e4, 2e5, 4e5):
+            pts = []
+            for t in np.linspace(0, 2 * np.pi, 120):
+                u = vecs @ (np.array([np.cos(t), np.sin(t)]) * np.sqrt(level / vals))
+                p = center + u
+                pts.append((ax.px(p[0]), ax.py(p[1])))
+            s.add('<clipPath id="c%d"><rect x="%s" y="%s" width="%s" height="%s"/></clipPath>' % (x0, num(ax.x), num(ax.y), num(ax.w), num(ax.h)))
+            s.add('<g clip-path="url(#c%d)">' % x0)
+            s.polyline(pts + [pts[0]], width=1)
+            s.add("</g>")
+        s.circle(ax.px(center[0]), ax.py(center[1]), 3)
+        s.text(ax.px(center[0]) + 6, ax.py(center[1]) - 6, mark, size=10.5, italic=True)
+        s.text(x0 + 230, 14, title, size=12, italic=True, anchor="end")
+
+    panel(75, A, est, "(a) least squares", "estimate")
+    panel(395, A + lam * np.eye(2), ridge_est, "(b) ridge, λ = 3000", "estimate")
     return s
 
 
