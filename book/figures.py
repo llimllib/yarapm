@@ -774,6 +774,73 @@ def availability_curves() -> Svg:
     return s
 
 
+# chapter 8
+
+# the daily `rapm` run with unknown availability on 2021-2024, the
+# scoreboard's (yarapm.harness --model rapm --cadence daily --set
+# minutes=unknown), with segments from 2019 on
+RUN = ROOT / "out" / "x2019" / "runs" / "predictions" / "run=rapm-93ea3652" / "data.parquet"
+
+
+def run_errors():
+    import duckdb
+    import numpy as np
+
+    p = duckdb.sql(f"SELECT pred_pts - pred_opp_pts AS pm, pts - opp_pts AS m FROM '{RUN}'").fetchnumpy()
+    pm, m = np.asarray(p["pm"], dtype=float), np.asarray(p["m"], dtype=float)
+    return pm, m, float(np.sqrt(np.mean((pm - m) ** 2)))
+
+
+@figure("errors")
+def errors() -> Svg:
+    """The distribution of margin errors against a normal with the same spread"""
+    import numpy as np
+
+    pm, m, sigma = run_errors()
+    err = pm - m
+    print(f"errors: {len(err)} games, sigma {sigma:.2f}; beyond 1 sigma {np.mean(np.abs(err) > sigma):.3f}, beyond 2 {np.mean(np.abs(err) > 2 * sigma):.3f}")
+    s = Svg(640, 230, "Histogram of the error in predicted margin, close to a normal curve with the same standard deviation")
+    a = Axes(s, 70, 15, 540, 170, (-50, 50), (0, 0.032))
+    a.frame([-50, -25, 0, 25, 50], [0, 0.01, 0.02, 0.03], "predicted margin − actual margin, points", "share of games per point",
+            xfmt=lambda v: f"{v:+.0f}" if v else "0", yfmt=lambda v: f"{v:g}")
+    edges = np.arange(-50, 51, 4)
+    counts, _ = np.histogram(err, edges)
+    for lo, c in zip(edges[:-1], counts):
+        h = c / len(err) / 4
+        s.rect(a.px(lo), a.py(h), a.px(lo + 4) - a.px(lo), a.py(0) - a.py(h), fill=GREY, width=0.7)
+    xs = np.linspace(-50, 50, 201)
+    a.line(xs, np.exp(-(xs**2) / (2 * sigma**2)) / (sigma * math.sqrt(2 * math.pi)), width=1.5)
+    s.text(a.px(20), a.py(0.022), f"normal, σ = {sigma:.2f}", italic=True, size=11)
+    return s
+
+
+@figure("calibration")
+def calibration() -> Svg:
+    """Predicted win probability against how often the team won"""
+    import numpy as np
+    from scipy.special import ndtr
+
+    pm, m, sigma = run_errors()
+    prob = ndtr(pm / sigma)
+    won = m > 0
+    s = Svg(640, 300, "Calibration chart: in each band of predicted probability, the home team won about as often as predicted")
+    a = Axes(s, 170, 15, 260, 240, (0, 1), (0, 1))
+    a.frame([0, 0.25, 0.5, 0.75, 1], [0, 0.25, 0.5, 0.75, 1], "predicted chance the home team wins", "share it won",
+            xfmt=lambda v: f"{v:g}", yfmt=lambda v: f"{v:g}")
+    s.line(a.px(0), a.py(0), a.px(1), a.py(1), stroke=FAINT, width=0.8, dash="3 3")
+    edges = np.linspace(0, 1, 11)
+    for lo, hi in zip(edges[:-1], edges[1:]):
+        i = (prob >= lo) & (prob < hi)
+        if i.sum() < 20:
+            continue
+        x, y, n = prob[i].mean(), won[i].mean(), i.sum()
+        se = math.sqrt(y * (1 - y) / n)
+        s.line(a.px(x), a.py(y - 2 * se), a.px(x), a.py(y + 2 * se), width=0.8)
+        a.points([x], [y], r=2.8)
+        print(f"calibration {lo:.1f}-{hi:.1f}: {n} games, predicted {x:.3f}, won {y:.3f}")
+    return s
+
+
 def main(names: list[str]) -> None:
     FIGURES.mkdir(parents=True, exist_ok=True)
     for name in names or list(REGISTRY):
