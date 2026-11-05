@@ -614,6 +614,138 @@ def valley() -> Svg:
     return s
 
 
+# chapter 5
+
+
+@figure("decay")
+def decay_weights() -> Svg:
+    """The weight of a game by its age: ratings (365 days) and the league level (7 days)"""
+    s = Svg(640, 230, "Two decay curves: a game's weight halves every year for the ratings and every week for the league's level")
+    a = Axes(s, 60, 22, 300, 150, (0, 8 * 365), (0, 1))
+    a.frame([0, 365, 730, 1095, 1460, 1825, 2190, 2555, 2920], [0, 0.25, 0.5, 0.75, 1], "age of the game, years", "weight",
+            xfmt=lambda v: f"{v / 365:.0f}", yfmt=lambda v: f"{v:g}")
+    xs = list(range(0, 8 * 365 + 1, 10))
+    a.line(xs, [0.5 ** (x / 365) for x in xs])
+    for yr in range(1, 8):
+        s.circle(a.px(yr * 365), a.py(0.5 ** yr), 2.2)
+    s.text(a.px(365) + 6, a.py(0.5) - 6, "½ after a year", size=10.5, italic=True)
+    s.text(360, 14, "(a) ratings: half life 365 days", italic=True, anchor="end", size=12)
+    b = Axes(s, 410, 22, 210, 150, (0, 56), (0, 1))
+    b.frame([0, 7, 14, 21, 28, 35, 42, 49, 56], [0, 0.25, 0.5, 0.75, 1], "age of the game, days", "", yfmt=lambda v: f"{v:g}")
+    xs = [x / 2 for x in range(0, 113)]
+    b.line(xs, [0.5 ** (x / 7) for x in xs])
+    s.text(620, 14, "(b) league level: 7 days", italic=True, anchor="end", size=12)
+    eff = 365 / math.log(2) * (1 - 0.5**8)
+    print(f"decay: effective length of the 365-day window {eff:.0f} days")
+    return s
+
+
+@figure("drift")
+def drift() -> Svg:
+    """The league's points per 100 possessions by month, three seasons"""
+    from yarapm.games import load_results
+
+    con = connect()
+    load_results(con, "season IN (2022, 2024, 2026)")
+    rows = con.execute("""
+        SELECT season, month(game_date) AS m, 100 * sum(pts + opp_pts) / sum(poss + opp_poss)
+        FROM results WHERE game_type = 'regular_season'
+        GROUP BY season, m
+    """).fetchall()
+    order = {10: 0, 11: 1, 12: 2, 1: 3, 2: 4, 3: 5, 4: 6}
+    s = Svg(640, 240, "Line chart of league efficiency by month in 2022, 2024 and 2026: it rose ten points through 2022, peaked in December 2024 and fell four by April")
+    a = Axes(s, 70, 15, 470, 170, (-0.3, 6.3), (104, 118))
+    a.frame([], [104, 107, 110, 113, 116], "", "points per 100 possessions")
+    for m, i in order.items():
+        s.line(a.px(i), a.py(104), a.px(i), a.py(104) + 4)
+        s.text(a.px(i), a.py(104) + 16, ["Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr"][i], anchor="middle")
+    styles = {2022: (None, INK), 2024: ("6 3", INK), 2026: ("2 3", INK)}
+    for season, (dash, fill) in styles.items():
+        pts = sorted((order[m], e) for se, m, e in rows if se == season and m in order)
+        print(f"drift {season}: " + ", ".join(f"{e:.1f}" for _, e in pts))
+        a.line([p[0] for p in pts], [p[1] for p in pts], dash=dash)
+        a.points([p[0] for p in pts], [p[1] for p in pts], r=2.2, fill=PAPER if season == 2024 else INK, stroke=INK)
+        last = pts[-1]
+        s.text(a.px(last[0]) + 8, a.py(last[1]) + 4, str(season), size=11, italic=True)
+    return s
+
+
+# chapter 6
+
+
+@figure("box-formula")
+def box_formula() -> Svg:
+    """The box formula's coefficients on standardized inputs, fit for 2026"""
+    from yarapm.harness import History, load
+    from yarapm.players import PlayerRatings
+    from yarapm.prior import RATES
+
+    con = connect()
+    load(con, ROOT / "out")
+    opener = con.execute("SELECT min(game_date) FROM results WHERE season = 2026").fetchall()[0][0]
+    m = PlayerRatings(minutes="unknown")
+    m.fit(History(con, opener, 2026))
+    assert m.prior.box is not None
+    labels = {
+        "pts": "points", "fg2a": "2-pt attempts", "fg3a": "3-pt attempts", "fta": "free throw att.",
+        "ast": "assists", "tov": "turnovers", "oreb": "off. rebounds", "dreb": "def. rebounds",
+        "stl": "steals", "blk": "blocks", "pf": "fouls",
+    }
+    names = [labels[r] for r in RATES] + ["true shooting", "3-pt %", "usage × shooting", "minutes per game",
+                                           "height", "log draft pick", "undrafted"]
+    off, dfn = m.prior.box.offense[1:], m.prior.box.defense[1:]
+    for n, o, d in zip(names, off, dfn):
+        print(f"box formula {n}: offense {o:+.2f}, defense {d:+.2f}")
+    s = Svg(640, 20 + 17 * len(names) + 40, "Bar charts of the box formula's coefficients for offense and defense")
+    for col, (vals, title) in enumerate(((off, "(a) offense"), (dfn, "(b) defense"))):
+        x0 = 230 + col * 210
+        a = Axes(s, x0, 20, 170, 17 * len(names), (-1.5, 1.5), (0, len(names)))
+        s.line(a.px(0), a.y, a.px(0), a.y + a.h)
+        for i, v in enumerate(vals):
+            y = a.y + 17 * i + 3
+            s.rect(min(a.px(0), a.px(v)), y, abs(a.px(v) - a.px(0)), 11, fill=GREY if v > 0 else "url(#hatch)", width=0.7)
+        for t in (-1, 0, 1):
+            s.line(a.px(t), a.y + a.h, a.px(t), a.y + a.h + 4)
+            s.text(a.px(t), a.y + a.h + 16, f"{t:+d}" if t else "0", anchor="middle")
+        s.text(x0 + 170, 12, title, italic=True, anchor="end", size=12)
+    for i, n in enumerate(names):
+        s.text(215, 20 + 17 * i + 12, esc(n), size=10.5, anchor="end")
+    s.text(435, 20 + 17 * len(names) + 34, "points per 100 possessions, per standard deviation of the input", italic=True, anchor="middle", size=10.5)
+    return s
+
+
+@figure("wembanyama")
+def wembanyama() -> Svg:
+    """Victor Wembanyama's rating and prior through his rookie season, 2024"""
+    from datetime import date
+
+    con = connect()
+    con.execute("ATTACH 'https://basketball-data.billmill.org/yarapm/yarapm.duckdb' AS yarapm (READ_ONLY)")
+    rows = con.execute("""
+        SELECT r.as_of_date, r.o_rating + r.d_rating, r.o_prior + r.d_prior, r.possessions
+        FROM yarapm.ratings_daily r JOIN nba.players p USING (player_id)
+        WHERE r.season = 2024 AND p.name = 'Victor Wembanyama' ORDER BY 1
+    """).fetchall()
+    start = date(2023, 10, 24)
+    days = [(d - start).days for d, *_ in rows]
+    print(f"wembanyama 2024: first {rows[0][0]} rating {rows[0][1]:+.2f}, last {rows[-1][0]} rating {rows[-1][1]:+.2f} prior {rows[-1][2]:+.2f}, {rows[-1][3]} possessions")
+    s = Svg(640, 240, "Line chart: Wembanyama's rating rose from about +1.5 to +4.4 through his rookie season, pulling away from his box-score prior")
+    a = Axes(s, 60, 15, 510, 170, (0, 240), (-1, 5))
+    months = [("Nov", date(2023, 11, 1)), ("Dec", date(2023, 12, 1)), ("Jan", date(2024, 1, 1)), ("Feb", date(2024, 2, 1)),
+              ("Mar", date(2024, 3, 1)), ("Apr", date(2024, 4, 1)), ("May", date(2024, 5, 1)), ("Jun", date(2024, 6, 1))]
+    a.frame([], [-1, 0, 1, 2, 3, 4, 5], "", "points per 100 possessions", yfmt=lambda v: f"{v:+.0f}" if v else "0")
+    for name, d in months:
+        x = a.px((d - start).days)
+        s.line(x, a.y + a.h, x, a.y + a.h + 4)
+        s.text(x, a.y + a.h + 16, name, anchor="middle")
+    s.line(a.x, a.py(0), a.x + a.w, a.py(0), stroke=FAINT, width=0.6)
+    a.line(days, [r[1] for r in rows], width=1.6)
+    a.line(days, [r[2] for r in rows], dash="5 3", width=1.2)
+    s.text(a.px(days[-1]) + 4, a.py(rows[-1][1]) + 4, "rating", size=11, italic=True)
+    s.text(a.px(days[-1]) + 4, a.py(rows[-1][2]) + 4, "prior", size=11, italic=True)
+    return s
+
+
 def main(names: list[str]) -> None:
     FIGURES.mkdir(parents=True, exist_ok=True)
     for name in names or list(REGISTRY):

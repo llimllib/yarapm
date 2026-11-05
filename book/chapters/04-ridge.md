@@ -85,8 +85,8 @@ sees a long valley: almost any split of Denver's success between Jokić
 and Braun fits nearly as well, as long as the sum is right. The penalty
 tilts the valley toward the origin and rounds it into a bowl, and the
 minimum moves to where the data and the penalty balance. Jokić, who has
-far more possessions without Braun than Braun has without him, keeps
-more of his rating.
+far more possessions without Braun than Braun has without Jokić, keeps
+more of the original rating.
 
 ![Contours of the objective for Jokić's and Braun's 2026 ratings, the
 rest held fixed, using the possessions they played together and apart.
@@ -240,9 +240,9 @@ rebuilt.
 
 ::: {.exercise #exr:shrink-numbers}
 A rookie plays 1,200 offensive possessions, and the residual of the
-segments they played in, after his teammates and opponents are accounted
+segments they played in, after teammates and opponents are accounted
 for, averages $+6$ points per 100. With a prior of $-1$ and $\lambda =
-3{,}000$, what is the ridge estimate? How many possessions would he need
+3{,}000$, what is the ridge estimate? How many possessions would the rookie need
 for the estimate to reach $+4$?
 :::
 
