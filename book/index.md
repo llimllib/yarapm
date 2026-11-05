@@ -29,9 +29,12 @@ code* say how the program does a step, and link to the code that does it.
 They're for readers who want to check, change or reuse the program, and
 the rest of the text doesn't depend on them.
 
-**Numbers.** The text quotes results as of the commit its code links
-point at. The model is tuned on the 2021–2024 seasons and was tested once
-on 2025–2026, which it never saw while it was being tuned. Seasons are
+**Numbers.** The ratings and predictions quoted are a snapshot, from
+the published data of November 5, 2026 (model version `bc77b52137c7`),
+and the code links point at the commit the text describes. Both move as
+the data grows, so a rating looked up today may differ in the last digit.
+The model is tuned on the 2021–2024 seasons and was tested once on
+2025–2026, which it never saw while it was being tuned. Seasons are
 named for the year they end: 2026 is the 2025–26 season.
 
 **The data.** The ratings, predictions and the prediction log are in
