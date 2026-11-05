@@ -86,6 +86,19 @@ version, rating the missing ones and its own day again, and rates every
 day if not; a backfill does the same for the finished seasons. The latest
 day changes with every build until the season moves on.
 
+Each season's file is sorted by player, in row groups of 20,480 rows, so
+a query for a few players reads a small part of each file: one player's
+career is about 1MB over HTTP, against 0.3MB for one day of every player.
+
+```sql
+-- a player's ratings and the prior they're pulled toward, over every season
+SELECT r.season, r.as_of_date, r.o_rating, r.d_rating, r.rating,
+    r.o_prior + r.d_prior AS prior, r.possessions
+FROM yarapm.ratings_daily r JOIN nba.players p USING (player_id)
+WHERE p.name = 'Paul George'
+ORDER BY r.as_of_date;
+```
+
 ### `team_ratings_daily`
 
 Each team's rating as of the same days as `ratings_daily`, at full
@@ -127,11 +140,20 @@ WHERE r.season = 2027
 ORDER BY r.full_net DESC;
 ```
 
+```sql
+-- a team's rating at full strength and on the day, over every season
+SELECT r.season, r.as_of_date, r.full_net, r.net
+FROM yarapm.team_ratings_daily r
+WHERE r.team_id = '1610612754'
+ORDER BY r.as_of_date;
+```
+
 ### `team_players_daily`
 
 The players in each team's lineups in `team_ratings_daily`, keyed by
 `season`, `as_of_date`, `team_id` and `player_id`: everyone in either one.
-Each team's `full_min` and `min` add up to 240.
+Each team's `full_min` and `min` add up to 240. Sorted by team, as
+`ratings_daily` is by player.
 
 | Column | Type | Description |
 |--------|------|-------------|

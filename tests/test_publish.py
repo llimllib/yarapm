@@ -1,5 +1,5 @@
 import json
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import duckdb
@@ -7,6 +7,7 @@ import pytest
 
 from yarapm.publish import (
     DAILY,
+    ROW_GROUP_SIZE,
     Daily,
     backfill_seasons,
     built_days,
@@ -67,6 +68,22 @@ def test_ratings_keep_earlier_days(tmp_path):
     assert con.sql(
         "SELECT as_of_date, model_version FROM ratings_daily"
     ).fetchall() == [(date(2026, 11, 3), "v2")]
+
+
+def test_ratings_row_groups(tmp_path):
+    # a player's rows are together, so a reader skips the other row groups
+    con = duckdb.connect()
+    days = [date(2000, 1, 1) + timedelta(days=i) for i in range(ROW_GROUP_SIZE)]
+    ratings_table(
+        con, {d: [rating("a"), rating("b")] for d in days}, "c", "{}", "v", None
+    )
+    path = dataset_path(tmp_path, "ratings_daily", 2027)
+    write(con, "FROM ratings_daily", path)
+    assert con.sql(f"""
+        SELECT row_group_id, stats_min_value, stats_max_value
+        FROM parquet_metadata('{path}') WHERE path_in_schema = 'player_id'
+        ORDER BY ALL
+    """).fetchall() == [(0, "a", "a"), (1, "b", "b")]
 
 
 def write_daily(con, root, season, days, version):

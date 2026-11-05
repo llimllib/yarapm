@@ -115,6 +115,12 @@ LOGS = ("prediction_log", "minutes_log")
 LOG_DAYS = 7
 # DuckDB 1.1.1, in Observable Framework's DuckDB-wasm, reads up to v1.0.0
 STORAGE_VERSION = "v1.0.0"
+# rows per parquet row group. ratings_daily is sorted by player and
+# team_players_daily by team, so a reader skips the row groups without the
+# one it wants: a player's ratings over ten seasons read 1.2MB over HTTP
+# rather than 6.3MB with one row group a season, and a day's (in every row
+# group) still 0.3MB (#36)
+ROW_GROUP_SIZE = 20480
 # the first season backfilled is the first with this many seasons of
 # play-by-play before it: the box-score prior learns from plain RAPM on the
 # earlier seasons, and two is as many as 2021 had when the defaults were
@@ -645,7 +651,7 @@ def ratings_table(
             ? AS commit, ? AS settings, ? AS model_version
         FROM rated
         {kept(existing, "rated")}
-        ORDER BY as_of_date, player_id
+        ORDER BY player_id, as_of_date
         """,
         [sha, settings, version],
     )
@@ -733,7 +739,7 @@ def team_tables(
             ? AS model_version
         FROM members
         {kept(existing["team_players_daily"], "members")}
-        ORDER BY as_of_date, team_id, full_min DESC, min DESC, player_id
+        ORDER BY team_id, as_of_date, full_min DESC, min DESC, player_id
         """,
         [version],
     )
@@ -990,7 +996,10 @@ def write(con: duckdb.DuckDBPyConnection, query: str, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.tmp")
     try:
-        con.execute(f"COPY ({query}) TO '{tmp}' (FORMAT parquet, COMPRESSION zstd)")
+        con.execute(
+            f"""COPY ({query}) TO '{tmp}'
+            (FORMAT parquet, COMPRESSION zstd, ROW_GROUP_SIZE {ROW_GROUP_SIZE})"""
+        )
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
