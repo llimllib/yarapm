@@ -167,8 +167,10 @@ def test_backfill_seasons():
 
 
 def test_model_version():
-    version = model_version()
-    assert len(version) == 12 and version == model_version()
+    version = model_version(2016)
+    assert len(version) == 12 and version == model_version(2016)
+    # play-by-play backfilled: every season's prior moves
+    assert model_version(2010) != version
 
 
 def tables(
@@ -314,7 +316,7 @@ def test_current(tmp_path):
     url = (tmp_path / "site").as_uri()
     root = tmp_path / "publish"
     # never built
-    assert not current(root, url, "v1")
+    assert not current(root, "v1", url)
     con = duckdb.connect()
     write_daily(con, root, 2027, [date(2026, 11, 1)], "v1")
     write_metadata(root, {d: {"model_version": "v1"} for d in DAILY}, {})
@@ -323,9 +325,9 @@ def test_current(tmp_path):
         ("2026-11-04T04:54:13Z", True),
     ]:
         write_metadata(root, {}, {"source_updated": built})
-        assert current(root, url, "v1") == expected
+        assert current(root, "v1", url) == expected
     # another model version builds again
-    assert not current(root, url, "v2")
+    assert not current(root, "v2", url)
 
 
 def test_team_tables(tmp_path):

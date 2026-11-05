@@ -79,7 +79,7 @@ without games, until a new season's prior.
 | o_prior, d_prior | DOUBLE | The box-score prior the ratings are pulled toward. A player with no possessions in the fit is rated at their prior |
 | possessions | INTEGER | Offensive possessions on the floor this season before the day |
 | commit, settings | VARCHAR | The yarapm commit and model settings (JSON) that rated the day |
-| model_version | VARCHAR | A hash of the code and locked dependencies that rated the day: the same for every row of a season, and of every daily dataset's season |
+| model_version | VARCHAR | A hash of the code and locked dependencies that rated the day, and the first season of play-by-play (the prior learns from every season before): the same for every row of a season, and of every daily dataset's season |
 
 A build keeps the season's days if its files were built by its model
 version, rating the missing ones and its own day again, and rates every

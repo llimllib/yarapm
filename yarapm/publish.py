@@ -45,7 +45,8 @@ bucket's yarapm/ prefix, laid out like nba_data's, one file per season:
 
 The daily datasets are the current model's view of each day (#33): every
 row of a season's files comes from one model version (`model_version`, a
-hash of the code and locked dependencies). A build keeps the season's days
+hash of the code, the locked dependencies and the first season of
+play-by-play). A build keeps the season's days
 if its files were built by this version, fitting only the missing ones and
 the build's day, and refits every day if not. The logs are the live
 record (#29) and keep what earlier builds wrote, whatever built them.
@@ -140,14 +141,23 @@ def live_model() -> PlayerRatings:
     return PlayerRatings(minutes="unknown")
 
 
-def model_version() -> str:
+def play_by_play_from(con: duckdb.DuckDBPyConnection) -> int:
+    """The first season of play-by-play in nba_data, so of segments"""
+    (first,) = con.execute("SELECT min(season) FROM nba.game_rotations").fetchall()[0]
+    return first
+
+
+def model_version(first_season: int) -> str:
     """
-    A hash of the code and locked dependencies that build the datasets, so
-    any change to them rebuilds the daily datasets. Conservative: a change
-    that doesn't move the ratings rebuilds them too
+    A hash of the code and locked dependencies that build the datasets, and
+    the first season with segments (`play_by_play_from`), so any change to
+    them rebuilds the daily datasets: the box-score prior learns from every
+    earlier season with segments, so as nba_data backfills play-by-play,
+    every season's ratings move (#37). Conservative: a change that doesn't
+    move the ratings rebuilds them too
     """
     package = Path(__file__).parent
-    digest = hashlib.sha256()
+    digest = hashlib.sha256(f"play-by-play from {first_season}".encode())
     for path in [*sorted(package.glob("*.py")), package.parent / "uv.lock"]:
         digest.update(path.name.encode())
         digest.update(path.read_bytes())
@@ -361,7 +371,7 @@ def build(
     games = [(g, start) for g, start in games if g.season == season]
     model = live_model()
     settings = json.dumps(model.settings, sort_keys=True)
-    version = model_version()
+    version = model_version(play_by_play_from(con))
 
     forecasts = forecast(con, model, games, day)
     assert isinstance(model.projection, ProjectedMinutes)
@@ -437,7 +447,7 @@ def backfill_seasons(
     the season of the first game scheduled from `day` (or the latest in
     `results`, if none is). Needs `results`. `only` limits them
     """
-    (first,) = con.execute("SELECT min(season) FROM nba.game_rotations").fetchall()[0]
+    first = play_by_play_from(con)
     games = scheduled(con, day, 366)
     if games:
         last = games[0][0].season - 1
@@ -478,7 +488,7 @@ def backfill(
     """
     model = live_model()
     settings = json.dumps(model.settings, sort_keys=True)
-    version = model_version()
+    version = model_version(play_by_play_from(con))
     if seasons:
         check_mirror(root, seasons[-1])
     for season in seasons:
@@ -1137,16 +1147,15 @@ def catalog(root: Path = PUBLISH, url: str | None = None) -> Path:
     return path
 
 
-def current(root: Path = PUBLISH, url: str = URL, version: str | None = None) -> bool:
+def current(root: Path, version: str, url: str = URL) -> bool:
     """
-    Whether the last build read nba_data's latest update, with this model
-    version (`model_version()` by default)
+    Whether the last build read nba_data's latest update, with model
+    version `version`
     """
     path = metadata_path(root)
     if not path.exists():
         return False
     meta = json.loads(path.read_text())
-    version = version or model_version()
     built_by = meta.get("datasets", {}).get("ratings_daily", {}).get("model_version")
     if built_by != version:
         print(f"the last build was model version {built_by}; this is {version}")
@@ -1212,7 +1221,8 @@ def main(argv: list[str] | None = None) -> None:
         print(f"wrote {catalog(args.root, args.url)}")
         return
     if args.command == "current":
-        sys.exit(0 if current(args.root) else 1)
+        version = model_version(play_by_play_from(connect()))
+        sys.exit(0 if current(args.root, version) else 1)
     if args.command == "verify":
         verify(args.url)
         return
@@ -1223,7 +1233,9 @@ def main(argv: list[str] | None = None) -> None:
         load_results(con)
         seasons = backfill_seasons(con, day, args.season)
         todo = (
-            seasons if args.force else stale(con, args.root, seasons, model_version())
+            seasons
+            if args.force
+            else stale(con, args.root, seasons, model_version(play_by_play_from(con)))
         )
         print(f"seasons {seasons}: {todo or 'none'} to backfill")
         if not todo:
