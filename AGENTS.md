@@ -1,7 +1,7 @@
 # AGENTS.md - Project Guidelines for AI Assistants
 
 ## Project Overview
-yarapm predicts the expected score of NBA games from player ratings (RAPM with a box-score prior, weighted by projected minutes). Every model change is judged by the walk-forward harness (#3) on the tuning seasons (2021-2024); 2025-2026 are held out until #12.
+yarapm predicts the expected score of NBA games from player ratings (RAPM with a box-score prior, weighted by projected minutes). Every model change is judged by the walk-forward harness (#3) on the tuning seasons (2021-2024); 2025-2026 are held out until #12. It also publishes every player's and team's ratings as of each game day, across every season we can rate, so their progression can be charted (DARKO-style); this repo makes the data, not the charts.
 
 Commands (tools come from `mise.toml`):
 - `mise run test` / `mise run lint` (ruff format, ruff check, ty). CI runs both; keep them passing
@@ -89,7 +89,7 @@ The Python API is stricter than 1.x:
 Plans and progress live in GitHub issues on `llimllib/yarapm`, not in docs. Use the `gh` CLI.
 
 - **Tracking issue #24** has the design summary and a task list of every work issue by milestone. Keep it current when issues are added or closed
-- **Milestones**, in build order (use the exact title with `gh issue create --milestone`): `1. Lineup segments`, `2. Walk-forward harness & team baseline`, `3. Player ratings`, `4. Projected minutes & final evaluation`, `5. Publishing`
+- **Milestones**, in build order (use the exact title with `gh issue create --milestone`): `1. Lineup segments`, `2. Walk-forward harness & team baseline`, `3. Player ratings`, `4. Projected minutes & final evaluation`, `5. Publishing`, `6. Rating history`
 - **Experiments:** ideas to try later are issues labeled `experiment`, with no milestone. Each says what to try and what result would show it worked. When something comes up that's out of scope, open one rather than doing it. Report results in the issue, citing the harness run's settings, and judge them on the tuning seasons only
 - Close work issues from the commit that finishes them (`Closes #N`), and check that CI passes
 - Creating issues and pushing are visible to others: confirm with the user first unless they've asked for it
