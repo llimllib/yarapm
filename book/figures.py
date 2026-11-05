@@ -10,6 +10,7 @@ text quotes from a figure is printed, so a rerun can be checked against
 the text. The SVGs are committed: the book's build doesn't run this.
 """
 
+import itertools
 import math
 import sys
 from collections.abc import Callable, Sequence
@@ -641,7 +642,7 @@ def ridge() -> Svg:
     """Ridge ratings against possessions, 2026, on the axes of least-squares"""
     import numpy as np
 
-    players, poss, fits = season_fits()
+    _, poss, fits = season_fits()
     r = fits[3000.0]
     few, many = poss < 500, poss >= 4000
     print(
@@ -730,10 +731,10 @@ def valley() -> Svg:
                 p = center + u
                 pts.append((ax.px(p[0]), ax.py(p[1])))
             s.add(
-                '<clipPath id="c%d"><rect x="%s" y="%s" width="%s" height="%s"/></clipPath>'
-                % (x0, num(ax.x), num(ax.y), num(ax.w), num(ax.h))
+                f'<clipPath id="c{x0}"><rect x="{num(ax.x)}" y="{num(ax.y)}" '
+                f'width="{num(ax.w)}" height="{num(ax.h)}"/></clipPath>'
             )
-            s.add('<g clip-path="url(#c%d)">' % x0)
+            s.add(f'<g clip-path="url(#c{x0})">')
             s.polyline(pts + [pts[0]], width=1)
             s.add("</g>")
         s.circle(ax.px(center[0]), ax.py(center[1]), 3)
@@ -781,7 +782,7 @@ def decay_weights() -> Svg:
         "",
         yfmt=lambda v: f"{v:g}",
     )
-    xs = [x / 2 for x in range(0, 113)]
+    xs = [x / 2 for x in range(113)]
     b.line(xs, [0.5 ** (x / 7) for x in xs])
     s.text(620, 14, "(b) league level: 7 days", italic=True, anchor="end", size=12)
     eff = 365 / math.log(2) * (1 - 0.5**8)
@@ -809,7 +810,7 @@ def drift() -> Svg:
     )
     a = Axes(s, 70, 15, 470, 170, (-0.3, 6.3), (104, 118))
     a.frame([], [104, 107, 110, 113, 116], "", "points per 100 possessions")
-    for m, i in order.items():
+    for i in order.values():
         s.line(a.px(i), a.py(104), a.px(i), a.py(104) + 4)
         s.text(
             a.px(i),
@@ -842,7 +843,7 @@ def box_formula() -> Svg:
     """The box formula's coefficients on standardized inputs, fit for 2026"""
     from yarapm.harness import History, load
     from yarapm.players import PlayerRatings
-    from yarapm.prior import RATES
+    from yarapm.prior import RATES, BoxPrior
 
     con = connect()
     load(con, ROOT / "out")
@@ -851,7 +852,8 @@ def box_formula() -> Svg:
     ).fetchall()[0][0]
     m = PlayerRatings(minutes="unknown")
     m.fit(History(con, opener, 2026))
-    assert m.prior.box is not None
+    prior = m.prior
+    assert isinstance(prior, BoxPrior) and prior.box is not None
     labels = {
         "pts": "points",
         "fg2a": "2-pt attempts",
@@ -874,7 +876,7 @@ def box_formula() -> Svg:
         "log draft pick",
         "undrafted",
     ]
-    off, dfn = m.prior.box.offense[1:], m.prior.box.defense[1:]
+    off, dfn = prior.box.offense[1:], prior.box.defense[1:]
     for n, o, d in zip(names, off, dfn):
         print(f"box formula {n}: offense {o:+.2f}, defense {d:+.2f}")
     s = Svg(
@@ -1038,7 +1040,7 @@ def run_errors():
     import duckdb
     import numpy as np
 
-    p = duckdb.sql(
+    p = duckdb.execute(
         f"SELECT pred_pts - pred_opp_pts AS pm, pts - opp_pts AS m FROM '{RUN}'"
     ).fetchnumpy()
     pm, m = np.asarray(p["pm"], dtype=float), np.asarray(p["m"], dtype=float)
@@ -1071,7 +1073,7 @@ def errors() -> Svg:
     )
     edges = np.arange(-50, 51, 4)
     counts, _ = np.histogram(err, edges)
-    for lo, c in zip(edges[:-1], counts):
+    for lo, c in zip(edges[:-1].tolist(), counts):
         h = c / len(err) / 4
         s.rect(
             a.px(lo),
@@ -1116,7 +1118,7 @@ def calibration() -> Svg:
     )
     s.line(a.px(0), a.py(0), a.px(1), a.py(1), stroke=FAINT, width=0.8, dash="3 3")
     edges = np.linspace(0, 1, 11)
-    for lo, hi in zip(edges[:-1], edges[1:]):
+    for lo, hi in itertools.pairwise(edges):
         i = (prob >= lo) & (prob < hi)
         if i.sum() < 20:
             continue
@@ -1242,7 +1244,6 @@ def warriors() -> Svg:
     missed = [d for d in games if d not in played]
     start = date(2025, 10, 15)
     span = (max(r[0] for r in rows) - start).days + 5
-    gap = [abs(f - n) for d, f, n in rows]
     print(
         f"warriors: {len(rows)} days; Curry played {len(played)}, missed {len(missed)} of {len(games)}; largest gap full minus today {max(f - n for d, f, n in rows):+.2f}"
     )
