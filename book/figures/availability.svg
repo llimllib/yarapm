@@ -1,0 +1,75 @@
+<svg viewBox="0 0 640 240" width="100%" role="img" aria-label="Line chart: a player who played every recent game plays 94% of the time; one who missed the last game, about 40 to 50%" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+<rect width="6" height="6" fill="#fbfaf5"/><line x1="0" y1="0" x2="0" y2="6" stroke="#1a1a1a" stroke-width="1.4"/></pattern>
+<pattern id="dots" width="5" height="5" patternUnits="userSpaceOnUse">
+<rect width="5" height="5" fill="#fbfaf5"/><circle cx="2.5" cy="2.5" r=".9" fill="#1a1a1a"/></pattern>
+<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+<path d="M 0 1 L 9 5 L 0 9 z" fill="#1a1a1a"/></marker>
+</defs>
+<line x1="70" y1="15" x2="70" y2="185" stroke="#1a1a1a" stroke-width="1.0"/>
+<line x1="70" y1="185" x2="540" y2="185" stroke="#1a1a1a" stroke-width="1.0"/>
+<line x1="84.7" y1="185" x2="84.7" y2="189" stroke="#1a1a1a" stroke-width="1.0"/>
+<text x="84.7" y="201" font-size="11" text-anchor="middle" fill="#1a1a1a">0</text>
+<line x1="133.6" y1="185" x2="133.6" y2="189" stroke="#1a1a1a" stroke-width="1.0"/>
+<text x="133.6" y="201" font-size="11" text-anchor="middle" fill="#1a1a1a">1</text>
+<line x1="182.6" y1="185" x2="182.6" y2="189" stroke="#1a1a1a" stroke-width="1.0"/>
+<text x="182.6" y="201" font-size="11" text-anchor="middle" fill="#1a1a1a">2</text>
+<line x1="231.6" y1="185" x2="231.6" y2="189" stroke="#1a1a1a" stroke-width="1.0"/>
+<text x="231.6" y="201" font-size="11" text-anchor="middle" fill="#1a1a1a">3</text>
+<line x1="280.5" y1="185" x2="280.5" y2="189" stroke="#1a1a1a" stroke-width="1.0"/>
+<text x="280.5" y="201" font-size="11" text-anchor="middle" fill="#1a1a1a">4</text>
+<line x1="329.5" y1="185" x2="329.5" y2="189" stroke="#1a1a1a" stroke-width="1.0"/>
+<text x="329.5" y="201" font-size="11" text-anchor="middle" fill="#1a1a1a">5</text>
+<line x1="378.4" y1="185" x2="378.4" y2="189" stroke="#1a1a1a" stroke-width="1.0"/>
+<text x="378.4" y="201" font-size="11" text-anchor="middle" fill="#1a1a1a">6</text>
+<line x1="427.4" y1="185" x2="427.4" y2="189" stroke="#1a1a1a" stroke-width="1.0"/>
+<text x="427.4" y="201" font-size="11" text-anchor="middle" fill="#1a1a1a">7</text>
+<line x1="476.4" y1="185" x2="476.4" y2="189" stroke="#1a1a1a" stroke-width="1.0"/>
+<text x="476.4" y="201" font-size="11" text-anchor="middle" fill="#1a1a1a">8</text>
+<line x1="525.3" y1="185" x2="525.3" y2="189" stroke="#1a1a1a" stroke-width="1.0"/>
+<text x="525.3" y="201" font-size="11" text-anchor="middle" fill="#1a1a1a">9</text>
+<line x1="66" y1="185" x2="70" y2="185" stroke="#1a1a1a" stroke-width="1.0"/>
+<text x="63" y="189" font-size="11" text-anchor="end" fill="#1a1a1a">0</text>
+<line x1="66" y1="142.5" x2="70" y2="142.5" stroke="#1a1a1a" stroke-width="1.0"/>
+<text x="63" y="146.5" font-size="11" text-anchor="end" fill="#1a1a1a">0.25</text>
+<line x1="66" y1="100" x2="70" y2="100" stroke="#1a1a1a" stroke-width="1.0"/>
+<text x="63" y="104" font-size="11" text-anchor="end" fill="#1a1a1a">0.5</text>
+<line x1="66" y1="57.5" x2="70" y2="57.5" stroke="#1a1a1a" stroke-width="1.0"/>
+<text x="63" y="61.5" font-size="11" text-anchor="end" fill="#1a1a1a">0.75</text>
+<line x1="66" y1="15" x2="70" y2="15" stroke="#1a1a1a" stroke-width="1.0"/>
+<text x="63" y="19" font-size="11" text-anchor="end" fill="#1a1a1a">1</text>
+<text x="305" y="219" font-size="11" text-anchor="middle" fill="#1a1a1a" font-style="italic">team games since the player last played</text>
+<text x="30" y="100" font-size="11" text-anchor="middle" fill="#1a1a1a" font-style="italic" transform="rotate(-90 30 100)">chance of playing</text>
+<polyline points="84.7,33.9 133.6,101.2" fill="none" stroke="#1a1a1a" stroke-width="1.4" stroke-linejoin="round"/>
+<circle cx="84.7" cy="33.9" r="2" fill="#1a1a1a" stroke="none"/>
+<circle cx="133.6" cy="101.2" r="2" fill="#1a1a1a" stroke="none"/>
+<text x="141.6" y="105.2" font-size="10.5" text-anchor="start" fill="#1a1a1a" font-style="italic">played 9 of 10</text>
+<polyline points="84.7,46.2 133.6,103.5 182.6,131.3 231.6,144.7" fill="none" stroke="#1a1a1a" stroke-width="1.4" stroke-linejoin="round" stroke-dasharray="6 3"/>
+<circle cx="84.7" cy="46.2" r="2" fill="#1a1a1a" stroke="none"/>
+<circle cx="133.6" cy="103.5" r="2" fill="#1a1a1a" stroke="none"/>
+<circle cx="182.6" cy="131.3" r="2" fill="#1a1a1a" stroke="none"/>
+<circle cx="231.6" cy="144.7" r="2" fill="#1a1a1a" stroke="none"/>
+<text x="239.6" y="148.7" font-size="10.5" text-anchor="start" fill="#1a1a1a" font-style="italic">played 7 of 10</text>
+<polyline points="84.7,67.2 133.6,114.7 182.6,132 231.6,142.7 280.5,148 329.5,158.5 378.4,168.8" fill="none" stroke="#1a1a1a" stroke-width="1.4" stroke-linejoin="round" stroke-dasharray="3 3"/>
+<circle cx="84.7" cy="67.2" r="2" fill="#1a1a1a" stroke="none"/>
+<circle cx="133.6" cy="114.7" r="2" fill="#1a1a1a" stroke="none"/>
+<circle cx="182.6" cy="132" r="2" fill="#1a1a1a" stroke="none"/>
+<circle cx="231.6" cy="142.7" r="2" fill="#1a1a1a" stroke="none"/>
+<circle cx="280.5" cy="148" r="2" fill="#1a1a1a" stroke="none"/>
+<circle cx="329.5" cy="158.5" r="2" fill="#1a1a1a" stroke="none"/>
+<circle cx="378.4" cy="168.8" r="2" fill="#1a1a1a" stroke="none"/>
+<text x="386.4" y="172.8" font-size="10.5" text-anchor="start" fill="#1a1a1a" font-style="italic">played 4 of 10</text>
+<polyline points="84.7,77.4 133.6,127.6 182.6,149.1 231.6,154.7 280.5,162.6 329.5,164.5 378.4,169.1 427.4,166.3 476.4,169.6 525.3,172.2" fill="none" stroke="#1a1a1a" stroke-width="1.4" stroke-linejoin="round" stroke-dasharray="1 2"/>
+<circle cx="84.7" cy="77.4" r="2" fill="#1a1a1a" stroke="none"/>
+<circle cx="133.6" cy="127.6" r="2" fill="#1a1a1a" stroke="none"/>
+<circle cx="182.6" cy="149.1" r="2" fill="#1a1a1a" stroke="none"/>
+<circle cx="231.6" cy="154.7" r="2" fill="#1a1a1a" stroke="none"/>
+<circle cx="280.5" cy="162.6" r="2" fill="#1a1a1a" stroke="none"/>
+<circle cx="329.5" cy="164.5" r="2" fill="#1a1a1a" stroke="none"/>
+<circle cx="378.4" cy="169.1" r="2" fill="#1a1a1a" stroke="none"/>
+<circle cx="427.4" cy="166.3" r="2" fill="#1a1a1a" stroke="none"/>
+<circle cx="476.4" cy="169.6" r="2" fill="#1a1a1a" stroke="none"/>
+<circle cx="525.3" cy="172.2" r="2" fill="#1a1a1a" stroke="none"/>
+<text x="533.3" y="176.2" font-size="10.5" text-anchor="start" fill="#1a1a1a" font-style="italic">played 1 of 10</text>
+</svg>

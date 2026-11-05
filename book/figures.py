@@ -746,6 +746,34 @@ def wembanyama() -> Svg:
     return s
 
 
+# chapter 7
+
+
+@figure("availability")
+def availability_curves() -> Svg:
+    """The chance a rostered player plays, by games since they last played"""
+    from datetime import date
+
+    from yarapm.harness import History, load
+    from yarapm.minutes import availability
+
+    con = connect()
+    load(con, ROOT / "out")
+    chances = availability(History(con, date(2026, 6, 13), 2026))
+    s = Svg(640, 240, "Line chart: a player who played every recent game plays 94% of the time; one who missed the last game, about 40 to 50%")
+    a = Axes(s, 70, 15, 470, 170, (-0.3, 9.3), (0, 1))
+    a.frame(list(range(10)), [0, 0.25, 0.5, 0.75, 1], "team games since the player last played", "chance of playing",
+            xfmt=lambda v: f"{v:.0f}", yfmt=lambda v: f"{v:g}")
+    for played, dash in ((9, None), (7, "6 3"), (4, "3 3"), (1, "1 2")):
+        pts = sorted((since, c) for (since, n), c in chances.items() if n == played and since <= 9)
+        print(f"availability, played {played} of the last 10: " + ", ".join(f"{since}: {c:.3f}" for since, c in pts))
+        a.line([p[0] for p in pts], [p[1] for p in pts], dash=dash)
+        a.points([p[0] for p in pts], [p[1] for p in pts], r=2)
+        last = pts[-1]
+        s.text(a.px(last[0]) + 8, a.py(last[1]) + 4, f"played {played} of 10", size=10.5, italic=True)
+    return s
+
+
 def main(names: list[str]) -> None:
     FIGURES.mkdir(parents=True, exist_ok=True)
     for name in names or list(REGISTRY):
