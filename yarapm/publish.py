@@ -18,6 +18,13 @@ bucket's yarapm/ prefix, laid out like nba_data's, one file per season:
                    season and the build's date. Days already in the
                    mirror are kept and missing ones are fit, so the job
                    downloads the bucket's yarapm/ first
+    team_ratings_daily
+                   each team's rating at full strength and with today's
+                   expected lineup (yarapm.strength, #31), as of the same
+                   days as ratings_daily
+    team_players_daily
+                   the players in those lineups, with their minutes in
+                   each
     predictions    the latest prediction for each of the season's games
                    from the date on, replaced every build
     minutes        each player's projected minutes and chance of playing
@@ -36,7 +43,9 @@ bucket's yarapm/ prefix, laid out like nba_data's, one file per season:
                    commit and settings that built it; also the date the
                    build predicted from and nba_data's latest update
 
-Both logs and ratings_daily keep what earlier builds wrote, so a build
+The logs and the daily datasets keep what earlier builds wrote: a build
+fits the days missing from any daily dataset and adds them to the ones
+missing them. So a build
 refuses to run if metadata.json lists a season of them that the mirror
 doesn't have.
 
@@ -66,7 +75,7 @@ import sys
 import urllib.request
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import duckdb
 import pyarrow as pa
@@ -78,11 +87,14 @@ from yarapm.harness import History, load, phases, score
 from yarapm.minutes import ProjectedMinutes
 from yarapm.players import PlayerRatings
 from yarapm.predict import EASTERN, Forecast, forecast, scheduled
+from yarapm.strength import lineups, team_ratings
 
 PUBLISH = OUT / "publish"
 PREFIX = "yarapm"
 URL = "https://basketball-data.billmill.org"
-DATASETS = ("ratings_daily", "predictions", "minutes")
+# the datasets with a row per day, which keep the days they have
+DAILY = ("ratings_daily", "team_ratings_daily", "team_players_daily")
+DATASETS = (*DAILY, "predictions", "minutes")
 LOGS = ("prediction_log", "minutes_log")
 # a build logs the predictions for the games in this many days
 LOG_DAYS = 7
@@ -154,6 +166,54 @@ def ratings(model: PlayerRatings, history: History) -> list[tuple]:
     return rows
 
 
+class Daily(NamedTuple):
+    """A day's rows of each daily dataset"""
+
+    players: list[tuple]
+    teams: list[tuple]
+    members: list[tuple]
+
+
+def day_rows(model: PlayerRatings, history: History) -> Daily:
+    """
+    The rows of the daily datasets as of the cutoff the model was fit on:
+    `ratings`; (team_id, full_off, full_def, off, def, league_average); and
+    (team_id, player_id, full_min, min, play_prob, o_rating, d_rating) for
+    the players in either of a team's lineups
+    """
+    assert isinstance(model.projection, ProjectedMinutes)
+    teams = lineups(model.projection, history)
+    rated, mean = team_ratings(teams, model.strength)
+    # the average team's points per 100 possessions against the average team
+    average = model.level + mean.off - mean.dfn
+    return Daily(
+        ratings(model, history),
+        [(t, r.full_off, r.full_def, r.off, r.dfn, average) for t, r in rated.items()],
+        [
+            (
+                team,
+                p,
+                lineup.full.get(p, 0.0),
+                lineup.today.get(p, 0.0),
+                lineup.chances.get(p, 0.0),
+                *model.rating(p),
+            )
+            for team, lineup in teams.items()
+            for p in sorted(set(lineup.full) | set(lineup.today))
+        ],
+    )
+
+
+def as_of_dates(con: duckdb.DuckDBPyConnection, path: Path) -> set[date]:
+    """The days in a daily dataset's file, if there is one"""
+    if not path.exists():
+        return set()
+    return {
+        d
+        for (d,) in con.execute(f"SELECT DISTINCT as_of_date FROM '{path}'").fetchall()
+    }
+
+
 def rating_days(
     con: duckdb.DuckDBPyConnection, season: int, day: date, have: set[date]
 ) -> list[date]:
@@ -209,22 +269,22 @@ def build(
         for g, _ in games
         for team in (g.team_id, g.opp_team_id)
     }
-    rated = {day: ratings(model, History(con, day, season))}
+    daily = {day: day_rows(model, History(con, day, season))}
 
-    existing = dataset_path(root, "ratings_daily", season)
-    have: set[date] = set()
-    if existing.exists():
-        have = {
-            d
-            for (d,) in con.execute(
-                f"SELECT DISTINCT as_of_date FROM '{existing}'"
-            ).fetchall()
-        }
+    existing = {d: dataset_path(root, d, season) for d in DAILY}
+    have = {d: as_of_dates(con, path) for d, path in existing.items()}
     earlier = live_model()
-    for d in rating_days(con, season, day, have):
+    for d in rating_days(con, season, day, set.intersection(*have.values())):
         if d != day:
             earlier.fit(History(con, d, season))
-            rated[d] = ratings(earlier, History(con, d, season))
+            daily[d] = day_rows(earlier, History(con, d, season))
+    # each dataset gets the days it's missing, and the build's day again
+    new = {
+        dataset: {
+            d: rows for d, rows in daily.items() if d == day or d not in have[dataset]
+        }
+        for dataset in DAILY
+    }
 
     team = TeamRatings()
     window = [(g, start) for g, start in games if (g.game_date - day).days < LOG_DAYS]
@@ -233,7 +293,14 @@ def build(
     predictions_table(con, forecasts, season, day)
     predictions_table(con, team_forecasts, season, day, "team_predictions")
     minutes_table(con, minutes, chances, day)
-    ratings_table(con, rated, sha, settings, existing if have else None)
+    ratings_table(
+        con,
+        {d: rows.players for d, rows in new["ratings_daily"].items()},
+        sha,
+        settings,
+        existing["ratings_daily"],
+    )
+    team_tables(con, new, sha, settings, existing)
     log_tables(
         con,
         now,
@@ -276,7 +343,7 @@ def check_mirror(root: Path, season: int) -> None:
     if not path.exists():
         return
     datasets = json.loads(path.read_text()).get("datasets", {})
-    for dataset in ("ratings_daily", *LOGS):
+    for dataset in (*DAILY, *LOGS):
         if dataset not in datasets:
             continue
         expected = datasets[dataset]["seasons"]
@@ -377,11 +444,11 @@ def ratings_table(
     rated: dict[date, list[tuple]],
     sha: str,
     settings: str,
-    existing: Path | None,
+    existing: Path,
 ) -> None:
     """
     Temp table `ratings_daily`: the days in `rated`, and the other days in
-    `existing`, the season's file so far
+    `existing`, the season's file so far, if there is one
     """
     rows = [(d, *r) for d, players in rated.items() for r in players]
     register(
@@ -398,13 +465,6 @@ def ratings_table(
             "possessions": pa.array([r[7] for r in rows], pa.int32()),
         },
     )
-    kept = (
-        f"""UNION ALL BY NAME
-        SELECT * FROM read_parquet('{existing}')
-        WHERE as_of_date NOT IN (SELECT as_of_date FROM rated)"""
-        if existing
-        else ""
-    )
     con.execute(
         f"""
         CREATE OR REPLACE TEMP TABLE ratings_daily AS
@@ -414,10 +474,99 @@ def ratings_table(
             round(d_prior, 2) AS d_prior, possessions,
             ? AS commit, ? AS settings
         FROM rated
-        {kept}
+        {kept(existing, "rated")}
         ORDER BY as_of_date, player_id
         """,
         [sha, settings],
+    )
+
+
+def kept(existing: Path, new: str) -> str:
+    """
+    SQL to add the rows of a daily dataset's `existing` file, if there is
+    one, for the days not in the table `new`
+    """
+    if not existing.exists():
+        return ""
+    return f"""UNION ALL BY NAME
+        SELECT * FROM read_parquet('{existing}')
+        WHERE as_of_date NOT IN (SELECT as_of_date FROM {new})"""
+
+
+def team_tables(
+    con: duckdb.DuckDBPyConnection,
+    new: dict[str, dict[date, Daily]],
+    sha: str,
+    settings: str,
+    existing: dict[str, Path],
+) -> None:
+    """
+    Temp tables `team_ratings_daily` and `team_players_daily`: the days in
+    `new` for each, and the other days in its `existing` file
+    """
+    teams = [
+        (d, *r) for d, rows in new["team_ratings_daily"].items() for r in rows.teams
+    ]
+    register(
+        con,
+        "teams_rated",
+        {
+            "as_of_date": pa.array([r[0] for r in teams], pa.date32()),
+            "team_id": [r[1] for r in teams],
+            **{
+                c: pa.array([r[i] for r in teams], pa.float64())
+                for i, c in enumerate(
+                    ["full_off", "full_def", "off", "def", "league_average"], 2
+                )
+            },
+        },
+    )
+    con.execute(
+        f"""
+        CREATE OR REPLACE TEMP TABLE team_ratings_daily AS
+        SELECT as_of_date, team_id,
+            round(full_off, 2) AS full_off, round(full_def, 2) AS full_def,
+            round(full_off + full_def, 2) AS full_net,
+            round(off, 2) AS off, round(def, 2) AS def,
+            round(off + def, 2) AS net,
+            round(league_average, 2) AS league_average,
+            'played' AS roster, ? AS commit, ? AS settings
+        FROM teams_rated
+        {kept(existing["team_ratings_daily"], "teams_rated")}
+        ORDER BY as_of_date, team_id
+        """,
+        [sha, settings],
+    )
+
+    members = [
+        (d, *r) for d, rows in new["team_players_daily"].items() for r in rows.members
+    ]
+    register(
+        con,
+        "members",
+        {
+            "as_of_date": pa.array([r[0] for r in members], pa.date32()),
+            "team_id": [r[1] for r in members],
+            "player_id": [r[2] for r in members],
+            **{
+                c: pa.array([r[i] for r in members], pa.float64())
+                for i, c in enumerate(
+                    ["full_min", "min", "play_prob", "o_rating", "d_rating"], 3
+                )
+            },
+        },
+    )
+    con.execute(
+        f"""
+        CREATE OR REPLACE TEMP TABLE team_players_daily AS
+        SELECT as_of_date, team_id, player_id,
+            round(full_min, 2) AS full_min, round(min, 2) AS min,
+            round(play_prob, 4) AS play_prob,
+            round(o_rating, 2) AS o_rating, round(d_rating, 2) AS d_rating
+        FROM members
+        {kept(existing["team_players_daily"], "members")}
+        ORDER BY as_of_date, team_id, full_min DESC, min DESC, player_id
+        """
     )
 
 
@@ -615,6 +764,24 @@ def validate(con: duckdb.DuckDBPyConnection, games: int) -> None:
         "logged minutes belong to logged predictions": """
             SELECT count(*) = 0 FROM minutes_log m
             ANTI JOIN prediction_log p USING (model, game_id, created)""",
+        "30 teams a day": """
+            SELECT coalesce(bool_and(teams = 30 AND n = 30), false) FROM (
+                SELECT count(DISTINCT team_id) AS teams, count(*) AS n
+                FROM team_ratings_daily GROUP BY as_of_date)""",
+        "team ratings add up and are centered": """
+            SELECT coalesce(bool_and(
+                abs(full_off + full_def - full_net) < 0.02
+                AND abs(off + def - net) < 0.02
+                AND abs(full_net) < 25 AND abs(net) < 25
+                AND league_average BETWEEN 90 AND 130), true)
+                AND (SELECT coalesce(bool_and(abs(f) < 0.05 AND abs(t) < 0.05), true)
+                    FROM (SELECT avg(full_net) AS f, avg(net) AS t
+                        FROM team_ratings_daily GROUP BY as_of_date))
+            FROM team_ratings_daily""",
+        "each team's lineups add up to 240": """
+            SELECT coalesce(bool_and(abs(full_total - 240) < 0.15 AND abs(today_total - 240) < 0.15), true)
+            FROM (SELECT sum(full_min) AS full_total, sum(min) AS today_total
+                FROM team_players_daily GROUP BY as_of_date, team_id)""",
         "ratings are plausible": """
             SELECT coalesce(bool_and(abs(o_rating) < 30 AND abs(d_rating) < 30
                 AND abs(o_prior) < 30 AND abs(d_prior) < 30

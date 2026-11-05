@@ -1,7 +1,7 @@
 # yarapm's data
 
-What yarapm publishes: player ratings, predictions for the games not yet
-played, projected minutes, and a log of every prediction scored as the
+What yarapm publishes: player and team ratings, predictions for the games
+not yet played, projected minutes, and a log of every prediction scored as the
 games finish, rebuilt every time
 [nba_data](https://github.com/llimllib/nba_data) updates. The files are
 under the `yarapm/` prefix of the `basketball-data` bucket, laid out like
@@ -64,9 +64,73 @@ or with possessions this season.
 | possessions | INTEGER | Offensive possessions on the floor this season before the day |
 | commit, settings | VARCHAR | The yarapm commit and model settings (JSON) that rated the day |
 
-A day is rated once, by the first build on or after it that's missing it;
-the latest day is rated again by every build. Rows from an older model
+A day is rated once, by the first build on or after it that's missing it
+from any daily dataset (this one, `team_ratings_daily`,
+`team_players_daily`), which adds it to the ones missing it; the latest
+day is rated again by every build. Rows from an older model
 stay as they were, with its commit and settings.
+
+### `team_ratings_daily`
+
+Each team's rating as of each game day of the season and the latest
+build's day, at full strength and with today's expected lineup. Keyed by
+`season`, `as_of_date` and `team_id`. A team's rating is its players'
+ratings (`ratings_daily`) weighted by their share of its minutes, as the
+predictions weigh them; `team_players_daily` has the lineups.
+
+- **Full strength:** everyone's available. The players are those who've
+  played for the team this season and not for another team since (before
+  its first game, its roster as in `minutes`). The 240 minutes go to the
+  ones with the most minutes when they play, each getting theirs (up to
+  42), until they're used up; the rest get none. A player hurt since before
+  the season isn't counted until he plays.
+- **Today:** the lineup the predictions use: each player's chance of
+  playing × their minutes when playing, scaled to 240 (see `minutes`).
+
+Each is relative to the average of the 30 teams that day. The two lineups
+give out minutes differently (in order, and scaled), so even a healthy
+team's numbers differ a little; compare a team's to the other teams' in the
+same column rather than its full strength to its today.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| season, as_of_date, team_id | | Key |
+| full_off, full_def, full_net | DOUBLE | Full strength: points per 100 possessions better than the average team on offense, defense and overall, positive is good. `full_off + full_def = full_net`, within rounding |
+| off, def, net | DOUBLE | The same with today's lineup |
+| league_average | DOUBLE | Points per 100 possessions the average team scores against the average team, with today's lineups: a team's offense today is `league_average + off` points per 100 against an average defense, on a neutral court |
+| roster | VARCHAR | Where the full-strength players come from: `played`, this season's games. Will be `rosters_daily` once nba_data publishes rosters |
+| commit, settings | VARCHAR | As in `ratings_daily` |
+
+```sql
+-- teams at full strength today, and how far each is from it
+SELECT t.nba_abbrev, r.full_net, r.net, r.full_off, r.full_def
+FROM yarapm.team_ratings_daily r
+JOIN nba.team_seasons t ON t.season = r.season AND t.team_id = r.team_id
+WHERE r.season = 2027
+    AND r.as_of_date = (SELECT max(as_of_date) FROM yarapm.team_ratings_daily WHERE season = 2027)
+ORDER BY r.full_net DESC;
+```
+
+### `team_players_daily`
+
+The players in each team's lineups in `team_ratings_daily`, keyed by
+`season`, `as_of_date`, `team_id` and `player_id`: everyone in either one.
+Each team's `full_min` and `min` add up to 240.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| season, as_of_date, team_id, player_id | | Key |
+| full_min | DOUBLE | Minutes at full strength. 0 for a player only in today's lineup (one from late last season with a small chance of playing, say) or left out at full strength by the players ahead of him |
+| min, play_prob | DOUBLE | Today's expected minutes and chance of playing, as in `minutes`. 0 for a player who isn't on the team's roster as `minutes` has it |
+| o_rating, d_rating | DOUBLE | As in `ratings_daily` that day |
+
+```sql
+-- who a team is missing today: big minutes at full strength, few today
+SELECT p.name, m.full_min, m.min, m.play_prob, m.o_rating + m.d_rating AS rating
+FROM yarapm.team_players_daily m JOIN nba.players p USING (player_id)
+WHERE m.season = 2027 AND m.as_of_date = '2026-11-04' AND m.team_id = '1610612754'
+ORDER BY m.full_min - m.min DESC;
+```
 
 ### `predictions`
 

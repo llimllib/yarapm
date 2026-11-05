@@ -1,19 +1,24 @@
 import json
 from datetime import date
+from pathlib import Path
 
 import duckdb
 import pytest
 
 from yarapm.publish import (
+    Daily,
     catalog,
     current,
     dataset_path,
     metadata_path,
     ratings_table,
+    team_tables,
     validate,
     write,
     write_metadata,
 )
+
+NONE = Path("/nonexistent/data.parquet")
 
 
 def rating(player, o=1.0, d=-1.0):
@@ -27,7 +32,7 @@ def test_ratings_keep_earlier_days(tmp_path):
         {date(2026, 11, 1): [rating("a")], date(2026, 11, 2): [rating("a")]},
         "old",
         "{}",
-        None,
+        NONE,
     )
     path = dataset_path(tmp_path, "ratings_daily", 2027)
     write(con, "FROM ratings_daily", path)
@@ -49,7 +54,9 @@ def test_ratings_keep_earlier_days(tmp_path):
     ]
 
 
-def tables(con, home_pts=110.0, minutes=240.0, logged="2026-11-01 12:00:00+00"):
+def tables(
+    con, home_pts=110.0, minutes=240.0, logged="2026-11-01 12:00:00+00", full=240.0
+):
     con.execute(f"""CREATE OR REPLACE TABLE prediction_log AS
         SELECT model, 'g1' AS game_id, '{logged}'::TIMESTAMPTZ AS created,
             '2026-11-02 00:00:00+00'::TIMESTAMPTZ AS start_time
@@ -64,7 +71,37 @@ def tables(con, home_pts=110.0, minutes=240.0, logged="2026-11-01 12:00:00+00"):
         SELECT 'g1' AS game_id, team_id, 'p' || i AS player_id,
             {minutes} / 8 AS min, 0.9 AS play_prob
         FROM (VALUES ('H'), ('A')) t(team_id), range(8) r(i)""")
-    ratings_table(con, {date(2026, 11, 1): [rating("a")]}, "c", "{}", None)
+    ratings_table(con, {date(2026, 11, 1): [rating("a")]}, "c", "{}", NONE)
+    team_tables(
+        con,
+        team_days({date(2026, 11, 1): 30}, full=full),
+        "c",
+        "{}",
+        {
+            "team_ratings_daily": NONE,
+            "team_players_daily": NONE,
+        },
+    )
+
+
+def team_days(teams_by_day, full=240.0, shift=0.0):
+    """
+    Daily rows for `teams_by_day` (day -> number of teams): team i's full
+    offense is i minus the average (+ `shift`), and eight players each
+    """
+    out = {}
+    for day, n in teams_by_day.items():
+        teams = [
+            (f"T{i:02}", i - (n - 1) / 2 + shift, 0.0, 0.5, -0.5, 110.0)
+            for i in range(n)
+        ]
+        members = [
+            (team, f"{team}p{j}", full / 8, 30.0, 0.9, 1.0, -1.0)
+            for team, *_ in teams
+            for j in range(8)
+        ]
+        out[day] = Daily([], teams, members)
+    return {"team_ratings_daily": out, "team_players_daily": out}
 
 
 def test_validate():
@@ -77,7 +114,10 @@ def test_validate():
     with pytest.raises(ValueError, match="predictions are plausible"):
         validate(con, 1)
     tables(con, minutes=200)
-    with pytest.raises(ValueError, match="add up to 240"):
+    with pytest.raises(ValueError, match="each team's minutes add up to 240"):
+        validate(con, 1)
+    tables(con, full=200)
+    with pytest.raises(ValueError, match="each team's lineups add up to 240"):
         validate(con, 1)
     tables(con, logged="2026-11-02 01:00:00+00")
     with pytest.raises(ValueError, match="made before their games"):
@@ -154,3 +194,51 @@ def test_current(tmp_path):
     ]:
         write_metadata(root, {}, {"source_updated": built})
         assert current(root, url) == expected
+
+
+def test_team_tables(tmp_path):
+    con = duckdb.connect()
+    paths = {
+        d: dataset_path(tmp_path, d, 2027)
+        for d in ("team_ratings_daily", "team_players_daily")
+    }
+    team_tables(con, team_days({date(2026, 11, 1): 30}), "old", "{}", paths)
+    for dataset, path in paths.items():
+        write(con, f"FROM {dataset}", path)
+    by_day = "SELECT as_of_date, count(*), round(sum(full_net), 6) FROM team_ratings_daily GROUP BY ALL ORDER BY ALL"
+
+    # the 1st is kept and the 2nd added
+    team_tables(con, team_days({date(2026, 11, 2): 30}), "new", "{}", paths)
+    assert con.sql(by_day).fetchall() == [
+        (date(2026, 11, 1), 30, 0),
+        (date(2026, 11, 2), 30, 0),
+    ]
+    assert con.sql(
+        "SELECT full_off, full_def, full_net, off, def, net, roster, commit "
+        "FROM team_ratings_daily WHERE team_id = 'T29' ORDER BY as_of_date"
+    ).fetchall() == [
+        (14.5, 0, 14.5, 0.5, -0.5, 0, "played", "old"),
+        (14.5, 0, 14.5, 0.5, -0.5, 0, "played", "new"),
+    ]
+    assert con.sql(
+        "SELECT count(*), sum(full_min) FROM team_players_daily "
+        "WHERE as_of_date = '2026-11-02' AND team_id = 'T00'"
+    ).fetchall() == [(8, 240)]
+
+
+def test_validate_teams():
+    con = duckdb.connect()
+    tables(con)
+    for teams, shift, message in [
+        ({date(2026, 11, 1): 29}, 0.0, "30 teams a day"),
+        ({date(2026, 11, 1): 30}, 1.0, "add up and are centered"),
+    ]:
+        team_tables(
+            con,
+            team_days(teams, shift=shift),
+            "c",
+            "{}",
+            {"team_ratings_daily": NONE, "team_players_daily": NONE},
+        )
+        with pytest.raises(ValueError, match=message):
+            validate(con, 1)
