@@ -20,3 +20,7 @@ jobs:
 
       - name: Lint
         run: mise run lint
+
+      # the book's filters fail on an unknown reference or a missing figure
+      - name: Book
+        run: mise run book

@@ -1,0 +1,46 @@
+name: Book
+
+# Builds the book (book/, `mise run book`) and publishes it to GitHub Pages:
+# https://llimllib.github.io/yarapm/
+
+on:
+  push:
+    branches: ["main"]
+    paths: ["book/**", ".github/workflows/book.yml", "mise.toml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      # installs python, uv and pandoc from mise.toml
+      - uses: jdx/mise-action@v5
+
+      - name: Build
+        run: mise run book
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: out/book
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

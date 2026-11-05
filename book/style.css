@@ -1,0 +1,188 @@
+/*
+The book's look: a page of a math textbook. Text is set in KaTeX's
+Computer Modern (loaded with KaTeX's stylesheet), so it matches the math.
+Wide screens get a margin for sidenotes; narrow ones show a note when its
+number is tapped.
+*/
+:root {
+  --ink: #1a1a1a;
+  --faint: #6b6b6b;
+  --rule: #2b2b2b;
+  --paper: #fbfaf5;
+  --tint: #f1efe6;
+  --accent: #1f3a68; /* the dark blue of a textbook's second colour */
+  --text: 37rem;
+  --margin: 15rem;
+  --gutter: 2.5rem;
+}
+* { box-sizing: border-box; }
+html { background: #e9e7df; }
+body { margin: 0; padding: 2.5rem 1rem; }
+article {
+  max-width: calc(var(--text) + var(--margin) + var(--gutter) + 9rem);
+  margin: 0 auto;
+  padding: 3.5rem calc(var(--margin) + var(--gutter) + 4.5rem) 3rem 4.5rem;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "KaTeX_Main", "Latin Modern Roman", "CMU Serif", "Computer Modern Serif",
+    "STIX Two Text", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  font-size: 18px;
+  line-height: 1.55;
+  box-shadow: 0 1px 3px rgba(0,0,0,.15), 0 8px 24px rgba(0,0,0,.06);
+  hyphens: auto;
+  -webkit-hyphens: auto;
+}
+p { text-align: justify; margin: 0 0 .8em; }
+p + p { text-indent: 1.5em; margin-top: -.8em; }
+a { color: var(--accent); }
+a.ref, a.src { text-decoration: none; }
+a.ref:hover, a.src:hover { text-decoration: underline; }
+
+/* running head */
+.running-head {
+  display: flex; justify-content: space-between; gap: 1rem;
+  font-variant: small-caps; letter-spacing: .04em;
+  font-size: .85rem; color: var(--faint);
+  border-bottom: .5px solid var(--rule);
+  padding-bottom: .3rem; margin-bottom: 3rem;
+}
+.running-head a { color: inherit; text-decoration: none; }
+
+/* chapter title */
+.chapter-no {
+  font-variant: small-caps; letter-spacing: .12em;
+  font-size: 1rem; color: var(--faint); margin: 0;
+}
+h1 { font-weight: normal; font-size: 2.1rem; line-height: 1.2; margin: .2rem 0 .6rem; }
+.chapter-rule { border: 0; border-top: 1.5px solid var(--rule); margin: 0 0 .25rem; }
+.chapter-rule.thin { border-top-width: .5px; margin-bottom: 2rem; }
+.epigraph {
+  margin: 0 0 2rem auto; width: 72%; text-wrap: balance;
+  font-style: italic; font-size: .92rem; text-align: right; color: #333;
+}
+.epigraph cite { display: block; font-style: normal; font-variant: small-caps; margin-top: .2rem; }
+
+h2 { font-weight: bold; font-size: 1.25rem; margin: 2.4rem 0 .8rem; }
+h3 { font-weight: bold; font-size: 1.02rem; margin: 1.6rem 0 .5rem; }
+h2 .num { margin-right: .5em; }
+h3 .num { margin-right: .4em; }
+h2 + p, h3 + p { text-indent: 0; }
+
+code, pre {
+  font-family: "Latin Modern Mono", "CMU Typewriter Text", "Courier Prime",
+    "Courier New", Courier, monospace;
+  font-size: .88em;
+  hyphens: manual; -webkit-hyphens: manual;
+}
+pre {
+  font-size: .78rem; line-height: 1.45;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+  margin: 1rem 0; padding: .7rem 1rem;
+  border-top: .75px solid var(--rule); border-bottom: .75px solid var(--rule);
+  overflow-x: auto;
+}
+pre code { font-size: inherit; }
+
+/* math */
+.katex { font-size: 1em; }
+.katex-display { margin: 1rem 0; overflow-x: auto; overflow-y: hidden; }
+
+/* numbered environments */
+.env { margin: 1.3rem 0; }
+.env p { text-indent: 0; }
+.env p + p { margin-top: .5em; }
+.env .label { font-weight: bold; }
+.env .name { font-weight: normal; }
+.env.theorem, .env.proposition, .env.lemma, .env.corollary { font-style: italic; }
+.env.theorem .label, .env.proposition .label, .env.lemma .label, .env.corollary .label,
+.env.theorem .name, .env.proposition .name, .env.lemma .name, .env.corollary .name { font-style: normal; }
+.env.definition { border-left: 2px solid var(--accent); padding: .1rem 0 .1rem 1rem; }
+.env.theorem, .env.proposition {
+  border: .75px solid var(--rule); padding: .8rem 1.1rem; background: var(--tint);
+}
+.env.remark .label, .env.proof .label { font-style: italic; font-weight: normal; }
+.env.example .label { font-variant: small-caps; letter-spacing: .03em; font-weight: normal; }
+.qed { float: right; }
+.env.code {
+  background: var(--tint); padding: .7rem 1.1rem; font-size: .92rem;
+  border-top: .75px solid var(--rule); border-bottom: .75px solid var(--rule);
+}
+.env.code .label { font-variant: small-caps; letter-spacing: .05em; font-weight: normal; color: var(--accent); }
+.env.exercise .label { font-weight: bold; }
+.env.exercise { margin: .8rem 0; }
+
+/* tables, booktabs style */
+table {
+  border-collapse: collapse; margin: 1.2rem auto .4rem;
+  font-size: .93rem; font-variant-numeric: tabular-nums lining-nums;
+}
+thead tr:first-child th { border-top: 1.5px solid var(--rule); }
+thead th { border-bottom: .75px solid var(--rule); font-weight: normal; font-style: italic; }
+tbody tr:last-child td { border-bottom: 1.5px solid var(--rule); }
+th, td { padding: .28rem .9rem; vertical-align: top; }
+caption, figcaption {
+  caption-side: bottom; text-align: center; font-size: .88rem; margin: .5rem 2rem 1.4rem;
+  line-height: 1.4;
+}
+caption .label, figcaption .label { font-variant: small-caps; letter-spacing: .03em; }
+figcaption p { text-align: center; margin: 0; }
+figure { margin: 1.6rem 0; }
+figure svg { display: block; width: 100%; height: auto; }
+svg text { font-family: inherit; }
+
+ul, ol { padding-left: 1.6rem; }
+li { margin-bottom: .3rem; text-align: justify; }
+
+/* contents */
+.toc { margin: 0 0 2.4rem; font-size: .95rem; }
+.toc-head {
+  font-variant: small-caps; letter-spacing: .08em; margin: 0 0 .5rem; color: var(--faint);
+}
+.toc ul, .toc ol { list-style: none; margin: 0; padding: 0; }
+.toc li { margin: .12rem 0; text-align: left; }
+.toc ul ul { padding-left: 2.2rem; }
+.toc a { color: inherit; text-decoration: none; }
+.toc a:hover { color: var(--accent); }
+.toc .num { display: inline-block; min-width: 2.4rem; }
+.book-toc li.toc-sec { margin-top: .7rem; font-weight: bold; }
+.book-toc li.toc-sub { padding-left: 2.4rem; }
+
+.pager {
+  display: flex; justify-content: space-between; gap: 1rem;
+  margin-top: 3rem; padding-top: .6rem; border-top: .5px solid var(--rule);
+  font-size: .9rem; font-variant: small-caps; letter-spacing: .03em;
+}
+.pager span:nth-child(2) { text-align: center; }
+.pager span:last-child { text-align: right; }
+.pager a { text-decoration: none; }
+
+/* sidenotes */
+.sidenote {
+  float: right; clear: right;
+  width: var(--margin);
+  margin-right: calc(-1 * (var(--margin) + var(--gutter)));
+  margin-top: .25rem; margin-bottom: 1rem;
+  font-size: .8rem; line-height: 1.4; text-align: left; text-indent: 0;
+  hyphens: manual; -webkit-hyphens: manual;
+  position: relative;
+}
+.sidenote .sn-p { display: block; }
+.sidenote .sn-p:first-of-type { display: inline; }
+.sidenote .sn-p + .sn-p { margin-top: .4em; }
+.sidenote-number sup, .sidenote sup { font-size: .7em; line-height: 0; color: var(--accent); }
+input.margin-toggle { display: none; }
+
+@media (max-width: 66rem) {
+  article { max-width: 46rem; padding: 2.5rem 2rem 2rem; }
+  .sidenote { display: none; }
+  label.sidenote-number { cursor: pointer; }
+  .margin-toggle:checked + .sidenote {
+    display: block; float: left; clear: both; width: 95%;
+    margin: .6rem 2.5%; padding: .5rem .8rem; background: var(--tint);
+  }
+}
+@media (max-width: 34rem) {
+  body { padding: 0; }
+  article { padding: 1.5rem 1rem; font-size: 16px; }
+  p { text-align: left; }
+}

@@ -3,6 +3,7 @@ python = "3.14"
 ruff = "latest"
 ty = "latest"
 uv = "latest"
+pandoc = "3.13"
 
 [tasks.test]
 description = "Run the test suite"
@@ -11,7 +12,15 @@ run = "uv run pytest -q --no-header tests"
 [tasks.lint]
 description = "Check formatting, lints and types"
 run = [
-  "ruff format --check yarapm tests",
-  "ruff check yarapm tests",
-  "ty check yarapm tests",
+  "ruff format --check yarapm tests book",
+  "ruff check yarapm tests book",
+  "ty check yarapm tests book",
 ]
+
+[tasks.book]
+description = "Build the book into out/book/"
+run = "uv run python book/build.py"
+
+[tasks.book-figures]
+description = "Draw the book's figures into book/figures/ (reads the published data)"
+run = "uv run python book/figures.py"

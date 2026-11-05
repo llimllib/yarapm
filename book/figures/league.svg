@@ -1,0 +1,88 @@
+<svg viewBox="0 0 640 230" width="100%" role="img" aria-label="Two line charts by season, 2016 to 2026: possessions per 48 minutes rise from 97 to 100, points per 100 possessions from 106 to 115" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+<rect width="6" height="6" fill="#fbfaf5"/><line x1="0" y1="0" x2="0" y2="6" stroke="#1a1a1a" stroke-width="1.4"/></pattern>
+<pattern id="dots" width="5" height="5" patternUnits="userSpaceOnUse">
+<rect width="5" height="5" fill="#fbfaf5"/><circle cx="2.5" cy="2.5" r=".9" fill="#1a1a1a"/></pattern>
+<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+<path d="M 0 1 L 9 5 L 0 9 z" fill="#1a1a1a"/></marker>
+</defs>
+<line x1="60" y1="22" x2="60" y2="172" stroke="#1a1a1a" stroke-width="1.0"/>
+<line x1="60" y1="172" x2="300" y2="172" stroke="#1a1a1a" stroke-width="1.0"/>
+<line x1="70.9" y1="172" x2="70.9" y2="176" stroke="#1a1a1a" stroke-width="1.0"/>
+<text x="70.9" y="188" font-size="11" text-anchor="middle" fill="#1a1a1a">2016</text>
+<line x1="114.5" y1="172" x2="114.5" y2="176" stroke="#1a1a1a" stroke-width="1.0"/>
+<text x="114.5" y="188" font-size="11" text-anchor="middle" fill="#1a1a1a">2018</text>
+<line x1="158.2" y1="172" x2="158.2" y2="176" stroke="#1a1a1a" stroke-width="1.0"/>
+<text x="158.2" y="188" font-size="11" text-anchor="middle" fill="#1a1a1a">2020</text>
+<line x1="201.8" y1="172" x2="201.8" y2="176" stroke="#1a1a1a" stroke-width="1.0"/>
+<text x="201.8" y="188" font-size="11" text-anchor="middle" fill="#1a1a1a">2022</text>
+<line x1="245.5" y1="172" x2="245.5" y2="176" stroke="#1a1a1a" stroke-width="1.0"/>
+<text x="245.5" y="188" font-size="11" text-anchor="middle" fill="#1a1a1a">2024</text>
+<line x1="289.1" y1="172" x2="289.1" y2="176" stroke="#1a1a1a" stroke-width="1.0"/>
+<text x="289.1" y="188" font-size="11" text-anchor="middle" fill="#1a1a1a">2026</text>
+<line x1="56" y1="172" x2="60" y2="172" stroke="#1a1a1a" stroke-width="1.0"/>
+<text x="53" y="176" font-size="11" text-anchor="end" fill="#1a1a1a">95</text>
+<line x1="56" y1="134.5" x2="60" y2="134.5" stroke="#1a1a1a" stroke-width="1.0"/>
+<text x="53" y="138.5" font-size="11" text-anchor="end" fill="#1a1a1a">97</text>
+<line x1="56" y1="97" x2="60" y2="97" stroke="#1a1a1a" stroke-width="1.0"/>
+<text x="53" y="101" font-size="11" text-anchor="end" fill="#1a1a1a">99</text>
+<line x1="56" y1="59.5" x2="60" y2="59.5" stroke="#1a1a1a" stroke-width="1.0"/>
+<text x="53" y="63.5" font-size="11" text-anchor="end" fill="#1a1a1a">101</text>
+<line x1="56" y1="22" x2="60" y2="22" stroke="#1a1a1a" stroke-width="1.0"/>
+<text x="53" y="26" font-size="11" text-anchor="end" fill="#1a1a1a">103</text>
+<text x="180" y="206" font-size="11" text-anchor="middle" fill="#1a1a1a" font-style="italic">season</text>
+<text x="20" y="97" font-size="11" text-anchor="middle" fill="#1a1a1a" font-style="italic" transform="rotate(-90 20 97)">possessions per 48 min</text>
+<polyline points="70.9,146.2 92.7,136.9 114.5,117.2 136.4,68.7 158.2,66.6 180,86.6 201.8,105.1 223.6,85.8 245.5,100.7 267.3,90.4 289.1,79.1" fill="none" stroke="#1a1a1a" stroke-width="1.4" stroke-linejoin="round"/>
+<circle cx="70.9" cy="146.2" r="2.6" fill="#1a1a1a" stroke="none"/>
+<circle cx="92.7" cy="136.9" r="2.6" fill="#1a1a1a" stroke="none"/>
+<circle cx="114.5" cy="117.2" r="2.6" fill="#1a1a1a" stroke="none"/>
+<circle cx="136.4" cy="68.7" r="2.6" fill="#1a1a1a" stroke="none"/>
+<circle cx="158.2" cy="66.6" r="2.6" fill="#1a1a1a" stroke="none"/>
+<circle cx="180" cy="86.6" r="2.6" fill="#1a1a1a" stroke="none"/>
+<circle cx="201.8" cy="105.1" r="2.6" fill="#1a1a1a" stroke="none"/>
+<circle cx="223.6" cy="85.8" r="2.6" fill="#1a1a1a" stroke="none"/>
+<circle cx="245.5" cy="100.7" r="2.6" fill="#1a1a1a" stroke="none"/>
+<circle cx="267.3" cy="90.4" r="2.6" fill="#1a1a1a" stroke="none"/>
+<circle cx="289.1" cy="79.1" r="2.6" fill="#1a1a1a" stroke="none"/>
+<text x="300" y="14" font-size="12" text-anchor="end" fill="#1a1a1a" font-style="italic">(a) pace</text>
+<line x1="380" y1="22" x2="380" y2="172" stroke="#1a1a1a" stroke-width="1.0"/>
+<line x1="380" y1="172" x2="620" y2="172" stroke="#1a1a1a" stroke-width="1.0"/>
+<line x1="390.9" y1="172" x2="390.9" y2="176" stroke="#1a1a1a" stroke-width="1.0"/>
+<text x="390.9" y="188" font-size="11" text-anchor="middle" fill="#1a1a1a">2016</text>
+<line x1="434.5" y1="172" x2="434.5" y2="176" stroke="#1a1a1a" stroke-width="1.0"/>
+<text x="434.5" y="188" font-size="11" text-anchor="middle" fill="#1a1a1a">2018</text>
+<line x1="478.2" y1="172" x2="478.2" y2="176" stroke="#1a1a1a" stroke-width="1.0"/>
+<text x="478.2" y="188" font-size="11" text-anchor="middle" fill="#1a1a1a">2020</text>
+<line x1="521.8" y1="172" x2="521.8" y2="176" stroke="#1a1a1a" stroke-width="1.0"/>
+<text x="521.8" y="188" font-size="11" text-anchor="middle" fill="#1a1a1a">2022</text>
+<line x1="565.5" y1="172" x2="565.5" y2="176" stroke="#1a1a1a" stroke-width="1.0"/>
+<text x="565.5" y="188" font-size="11" text-anchor="middle" fill="#1a1a1a">2024</text>
+<line x1="609.1" y1="172" x2="609.1" y2="176" stroke="#1a1a1a" stroke-width="1.0"/>
+<text x="609.1" y="188" font-size="11" text-anchor="middle" fill="#1a1a1a">2026</text>
+<line x1="376" y1="172" x2="380" y2="172" stroke="#1a1a1a" stroke-width="1.0"/>
+<text x="373" y="176" font-size="11" text-anchor="end" fill="#1a1a1a">104</text>
+<line x1="376" y1="134.5" x2="380" y2="134.5" stroke="#1a1a1a" stroke-width="1.0"/>
+<text x="373" y="138.5" font-size="11" text-anchor="end" fill="#1a1a1a">107</text>
+<line x1="376" y1="97" x2="380" y2="97" stroke="#1a1a1a" stroke-width="1.0"/>
+<text x="373" y="101" font-size="11" text-anchor="end" fill="#1a1a1a">110</text>
+<line x1="376" y1="59.5" x2="380" y2="59.5" stroke="#1a1a1a" stroke-width="1.0"/>
+<text x="373" y="63.5" font-size="11" text-anchor="end" fill="#1a1a1a">113</text>
+<line x1="376" y1="22" x2="380" y2="22" stroke="#1a1a1a" stroke-width="1.0"/>
+<text x="373" y="26" font-size="11" text-anchor="end" fill="#1a1a1a">116</text>
+<text x="500" y="206" font-size="11" text-anchor="middle" fill="#1a1a1a" font-style="italic">season</text>
+<text x="340" y="97" font-size="11" text-anchor="middle" fill="#1a1a1a" font-style="italic" transform="rotate(-90 340 97)">points per 100 possessions</text>
+<polyline points="390.9,152.4 412.7,118 434.5,123.9 456.4,101.2 478.2,95.2 500,74.4 521.8,80.3 543.6,47.6 565.5,42 587.3,52.1 609.1,40.2" fill="none" stroke="#1a1a1a" stroke-width="1.4" stroke-linejoin="round"/>
+<circle cx="390.9" cy="152.4" r="2.6" fill="#fbfaf5" stroke="#1a1a1a"/>
+<circle cx="412.7" cy="118" r="2.6" fill="#fbfaf5" stroke="#1a1a1a"/>
+<circle cx="434.5" cy="123.9" r="2.6" fill="#fbfaf5" stroke="#1a1a1a"/>
+<circle cx="456.4" cy="101.2" r="2.6" fill="#fbfaf5" stroke="#1a1a1a"/>
+<circle cx="478.2" cy="95.2" r="2.6" fill="#fbfaf5" stroke="#1a1a1a"/>
+<circle cx="500" cy="74.4" r="2.6" fill="#fbfaf5" stroke="#1a1a1a"/>
+<circle cx="521.8" cy="80.3" r="2.6" fill="#fbfaf5" stroke="#1a1a1a"/>
+<circle cx="543.6" cy="47.6" r="2.6" fill="#fbfaf5" stroke="#1a1a1a"/>
+<circle cx="565.5" cy="42" r="2.6" fill="#fbfaf5" stroke="#1a1a1a"/>
+<circle cx="587.3" cy="52.1" r="2.6" fill="#fbfaf5" stroke="#1a1a1a"/>
+<circle cx="609.1" cy="40.2" r="2.6" fill="#fbfaf5" stroke="#1a1a1a"/>
+<text x="620" y="14" font-size="12" text-anchor="end" fill="#1a1a1a" font-style="italic">(b) efficiency</text>
+</svg>

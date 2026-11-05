@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>$if(chapter)$$chapter$. $endif$$pagetitle$ · $book-title$</title>
+<link rel="stylesheet" href="$katex$katex.min.css">
+<link rel="stylesheet" href="style.css">
+$math$
+</head>
+<body>
+<article>
+<header>
+<div class="running-head">
+  <span><a href="index.html">$book-title$</a></span>
+  <span>$if(chapter)$Chapter $chapter$ · $pagetitle$$else$$book-subtitle$$endif$</span>
+</div>
+$if(chapter)$
+<p class="chapter-no">Chapter $chapter$</p>
+$endif$
+<h1>$title$</h1>
+<hr class="chapter-rule">
+<hr class="chapter-rule thin">
+$if(epigraph)$
+<p class="epigraph">$epigraph$$if(epigraph-cite)$<cite>$epigraph-cite$</cite>$endif$</p>
+$endif$
+</header>
+$if(toc)$
+<nav class="toc">
+<p class="toc-head">In this chapter</p>
+$table-of-contents$
+</nav>
+$endif$
+$body$
+$if(contents)$
+$contents$
+$endif$
+<nav class="pager">
+  <span>$if(prev-href)$<a href="$prev-href$">← $prev-title$</a>$endif$</span>
+  <span><a href="index.html">Contents</a></span>
+  <span>$if(next-href)$<a href="$next-href$">$next-title$ →</a>$endif$</span>
+</nav>
+</article>
+</body>
+</html>
