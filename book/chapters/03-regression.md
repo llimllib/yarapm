@@ -18,12 +18,13 @@ why the answer goes wrong.
 For a segment's offense $s$, let $r_s = 100\,y_s / n_s$ be its points per
 100 possessions. The *adjusted plus-minus* model is
 $$
-r_s = \mu + \sum_{i \in O_s} o_i - \sum_{j \in D_s} d_j + \varepsilon_s,
-\qquad \mathbb{E}[\varepsilon_s] = 0, \quad \operatorname{Var}(\varepsilon_s) = \frac{\sigma^2}{n_s},
+r_s = \mu + \sum_{i \in O_s} o_i - \sum_{j \in D_s} d_j + \varepsilon_s ,
 $$ {#eq:apm}
 where $\mu$ is the league's average, $o_i$ is how many points per 100
-possessions player $i$ adds on offense, and $d_j$ how many player $j$
-takes away on defense.
+possessions player $i$ adds on offense, $d_j$ is how many player $j$
+takes away on defense, and $\varepsilon_s$ is noise: a random error with
+mean zero, $\mathbb{E}[\varepsilon_s] = 0$, and variance
+$\operatorname{Var}(\varepsilon_s) = \sigma^2 / n_s$.
 :::
 
 The defensive ratings enter with a minus sign so that a positive rating
@@ -31,19 +32,31 @@ is good on both ends, and a player's total rating is $o_i + d_i$. The
 units are worth pausing on. A rating of $+5$ means that with this player
 on the floor instead of an average one, their team scores, or stops, five
 more points per 100 possessions: about five points a game, if they played
-every minute. The variance assumption says that a segment's noise
-shrinks with its possessions, as the noise of an average does.^[If the
-points on each possession are independent with variance $\tau^2$, their
-mean over $n$ possessions has variance $\tau^2/n$, so 100 times it has
-variance $100^2\tau^2/n$; here $\sigma = 100\,\tau$. Exercise
+every minute.
+
+The noise term says the model is right *on average*. $\mathbb{E}$ is
+expected value, the average over everything that could have happened, so
+$\mathbb{E}[\varepsilon_s] = 0$ means the errors don't lean either way.
+The variance is about how big they are. $\sigma$ is the noise of a single
+possession, in points per 100: one possession scores 0, 2 or 3 points,
+which is 0, 200 or 300 per 100, so its scatter around the average is
+enormous, and $\sigma$ is about 110.^[If one possession's points have
+standard deviation $\tau$, then one possession's points *per 100* have
+standard deviation $100\tau$, which is $\sigma$. Exercise
 @exr:segment-rate puts $\tau$ near 1.1 points, so $\sigma \approx 110$.]
+A segment's rate is an average over its $n_s$ possessions, and averaging
+$n$ independent things divides the variance by $n$, so a segment's noise
+has variance $\sigma^2/n_s$ and standard deviation $\sigma/\sqrt{n_s}$.
+Long segments are more trustworthy than short ones.
 
 Take the first row of @tbl:first-segments: the Knicks' opening five
 scored 5 points on 7 possessions against the Spurs' starters, so
 $$
 \begin{aligned}
-71.4 = \mu &+ o_\text{Brunson} + o_\text{Bridges} + o_\text{Hart} + o_\text{Anunoby} + o_\text{Towns} \\
-&- d_\text{Fox} - d_\text{Castle} - d_\text{Vassell} - d_\text{Champagnie} - d_\text{Wembanyama} + \varepsilon_s .
+71.4 = \mu &+ o_\text{Brunson} + o_\text{Bridges} + o_\text{Hart} \\
+&+ o_\text{Anunoby} + o_\text{Towns} \\
+&- d_\text{Fox} - d_\text{Castle} - d_\text{Vassell} \\
+&- d_\text{Champagnie} - d_\text{Wembanyama} + \varepsilon_s .
 \end{aligned}
 $$
 Seven possessions is nothing, and $\varepsilon_s$ is huge: its standard
@@ -64,7 +77,10 @@ eleven nonzero entries. Then @eq:apm is $r_s = x_s^\top \beta +
 Since segments with more possessions are less noisy, we weight each one
 by its possessions, and choose $\beta$ to minimize
 $$
-L(\beta) = \sum_s n_s \left( r_s - x_s^\top \beta \right)^2 = (r - X\beta)^\top W (r - X\beta),
+\begin{aligned}
+L(\beta) &= \sum_s n_s \left( r_s - x_s^\top \beta \right)^2 \\
+&= (r - X\beta)^\top W (r - X\beta),
+\end{aligned}
 $$ {#eq:wls}
 where $X$ has the rows $x_s$, $r$ the rates, and $W = \operatorname{diag}(n_s)$.^[Weighting
 by $n_s$ is exactly right when $\operatorname{Var}(\varepsilon_s) = \sigma^2/n_s$:

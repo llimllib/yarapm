@@ -68,8 +68,10 @@ home team wins and outcome $y = 1$ if it did, $0$ if not, are
 
 ::: {.definition #def:scores title="Log loss and Brier score"}
 $$
-\text{log loss} = -\frac1N \sum_g \left[y_g \ln q_g + (1 - y_g) \ln(1 - q_g)\right], \qquad
-\text{Brier} = \frac1N \sum_g (q_g - y_g)^2 .
+\begin{aligned}
+\text{log loss} &= -\frac1N \sum_g \left[y_g \ln q_g + (1 - y_g) \ln(1 - q_g)\right], \\
+\text{Brier} &= \frac1N \sum_g (q_g - y_g)^2 .
+\end{aligned}
 $$
 Lower is better. Saying 50% every game scores $\ln 2 \approx 0.693$
 and $0.25$.

@@ -150,40 +150,66 @@ local function Div(el)
   return el
 end
 
--- display math followed by {#eq:name}: number it
-local function number_equations(inlines)
-  local out = pandoc.Inlines({})
+-- whitespace at either end of a run of inlines
+local function trim(inlines)
+  local blank = { Space = true, SoftBreak = true, LineBreak = true }
+  while #inlines > 0 and blank[inlines[1].t] do
+    inlines:remove(1)
+  end
+  while #inlines > 0 and blank[inlines[#inlines].t] do
+    inlines:remove(#inlines)
+  end
+  return inlines
+end
+
+-- A paragraph with display math followed by {#eq:name} is split around
+-- it, and the equation becomes a block of its own with its number beside
+-- it (not KaTeX's \tag, which a long equation runs into): the text
+-- before it stays a paragraph, and the text after it starts an unindented
+-- one, so it reads as the same paragraph continuing
+local function Para(el)
+  local blocks = pandoc.List({})
+  local run = pandoc.Inlines({})
+  local numbered = false
+  local make = el.t == "Plain" and pandoc.Plain or pandoc.Para
+  local function flush()
+    run = trim(run)
+    if #run > 0 then
+      blocks:insert(make(run))
+    end
+    run = pandoc.Inlines({})
+  end
   local i = 1
+  local inlines = el.content
   while i <= #inlines do
-    local el = inlines[i]
-    if el.t == "Math" and el.mathtype == "DisplayMath" then
-      local j = i + 1
-      if inlines[j] and inlines[j].t == "Space" then
-        j = j + 1
-      end
-      local tag = inlines[j]
-      local id = tag and tag.t == "Str" and tag.text:match("^{#(eq:[^}]+)}$")
-      if id then
-        local number = next_number("equation")
-        register(id, "Equation", number)
-        el.text = el.text .. " \\tag{" .. number .. "}"
-        out:insert(pandoc.Span({ el }, { id = id, class = "equation" }))
-        i = j + 1
-      else
-        out:insert(el)
-        i = i + 1
-      end
+    local x = inlines[i]
+    local j = i + 1
+    if inlines[j] and inlines[j].t == "Space" then
+      j = j + 1
+    end
+    local tag = inlines[j]
+    local id = x.t == "Math" and x.mathtype == "DisplayMath"
+      and tag and tag.t == "Str" and tag.text:match("^{#(eq:[^}]+)}$")
+    if id then
+      local number = next_number("equation")
+      register(id, "Equation", number)
+      flush()
+      blocks:insert(pandoc.Div(
+        pandoc.Plain({ x, pandoc.Span("(" .. number .. ")", { class = "eqno" }) }),
+        { id = id, class = "equation" }
+      ))
+      numbered = true
+      i = j + 1
     else
-      out:insert(el)
+      run:insert(x)
       i = i + 1
     end
   end
-  return out
-end
-
-local function Para(el)
-  el.content = number_equations(el.content)
-  return el
+  if not numbered then
+    return el
+  end
+  flush()
+  return blocks
 end
 
 local function Figure(el)

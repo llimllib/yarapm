@@ -86,6 +86,13 @@ pre code { font-size: inherit; }
 /* math */
 .katex { font-size: 1em; }
 .katex-display { margin: 1rem 0; overflow-x: auto; overflow-y: hidden; }
+/* a numbered equation: the math scrolls if it must, and the number stays
+   beside it rather than on top of it */
+.equation { display: flex; align-items: center; gap: 1rem; margin: 1rem 0; }
+.equation > .math.display { flex: 1; min-width: 0; }
+.equation > .math.display .katex-display { margin: 0; }
+.equation .eqno { flex: none; }
+.equation + p { text-indent: 0; }
 
 /* numbered environments */
 .env { margin: 1.3rem 0; }

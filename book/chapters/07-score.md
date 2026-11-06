@@ -20,7 +20,10 @@ over a game a team's players play 240 minutes between them.
 If player $i$ is expected to play $m_i$ minutes for a team, with $\sum_i
 m_i = 240$, the team's offensive and defensive strengths are
 $$
-O = 5 \sum_i \frac{m_i}{240}\, o_i, \qquad D = 5 \sum_i \frac{m_i}{240}\, d_i .
+\begin{aligned}
+O &= 5 \sum_i \frac{m_i}{240}\, o_i , \\
+D &= 5 \sum_i \frac{m_i}{240}\, d_i .
+\end{aligned}
 $$ {#eq:strength}
 :::
 
@@ -33,8 +36,10 @@ equal to the sum of their offensive ratings.
 In a game between $A$, at home, and $B$, with $P$ expected possessions
 each, the expected points are
 $$
-\hat S_A = \frac{P}{100}\left(\ell + \pi + \eta + O_A - D_B\right), \qquad
-\hat S_B = \frac{P}{100}\left(\ell + \pi - \eta + O_B - D_A\right),
+\begin{aligned}
+\hat S_A &= \tfrac{P}{100}\left(\ell + \pi + \eta + O_A - D_B\right), \\
+\hat S_B &= \tfrac{P}{100}\left(\ell + \pi - \eta + O_B - D_A\right),
+\end{aligned}
 $$ {#eq:expected-score}
 where $\ell$ is the league's level (@def:level), $\pi$ the playoff term if
 it's a playoff game, and $\eta$ the home-court term (@sec:covariates),

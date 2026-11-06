@@ -16,7 +16,10 @@ chapter is about what that term does and how to choose it.
 For a penalty $\lambda > 0$, in possessions, and a vector $m$ of prior
 ratings, the *ridge* estimate minimizes
 $$
-L_\lambda(\beta) = (r - X\beta)^\top W (r - X\beta) + \lambda \sum_i \left[(o_i - m^o_i)^2 + (d_i - m^d_i)^2\right].
+\begin{aligned}
+L_\lambda(\beta) = {} & (r - X\beta)^\top W (r - X\beta) \\
+& + \lambda \sum_i \left[(o_i - m^o_i)^2 + (d_i - m^d_i)^2\right].
+\end{aligned}
 $$ {#eq:ridge}
 :::
 
@@ -110,7 +113,10 @@ given the data are the ridge estimate with $\lambda = \sigma^2/\tau^2$.
 The log of the posterior density is, up to constants, the log
 likelihood plus the log prior:
 $$
--\frac{1}{2\sigma^2} (r - X\beta)^\top W (r - X\beta) - \frac{1}{2\tau^2} \sum_i \left[(o_i - m^o_i)^2 + (d_i - m^d_i)^2\right],
+\begin{aligned}
+& -\frac{1}{2\sigma^2} (r - X\beta)^\top W (r - X\beta) \\
+& -\frac{1}{2\tau^2} \sum_i \left[(o_i - m^o_i)^2 + (d_i - m^d_i)^2\right],
+\end{aligned}
 $$
 which is $-L_\lambda(\beta)/2\sigma^2$ for $\lambda = \sigma^2/\tau^2$.
 Maximizing one minimizes the other.
