@@ -42,7 +42,7 @@ possession, in points per 100: one possession scores 0, 2 or 3 points,
 which is 0, 200 or 300 per 100, so its scatter around the average is
 enormous, and $\sigma$ is about 110.^[If one possession's points have
 standard deviation $\tau$, then one possession's points *per 100* have
-standard deviation $100\tau$, which is $\sigma$. Exercise
+standard deviation $100\tau$, which is $\sigma$.
 @exr:segment-rate puts $\tau$ near 1.1 points, so $\sigma \approx 110$.]
 A segment's rate is an average over its $n_s$ possessions, and averaging
 $n$ independent things divides the variance by $n$, so a segment's noise
@@ -64,46 +64,135 @@ deviation is around $110/\sqrt{7} \approx 42$ points per 100. But there
 are 85,000 such equations in a season, and each player appears in
 thousands of them, with different teammates and opponents each time.
 
-## Weighted least squares
+## Writing the equations uniformly
 
-Stack the unknowns into one vector, $\beta = (\mu, o_1, \ldots, o_k, d_1,
-\ldots, d_k)$ for $k$ players, and write each segment's offense as a
-row $x_s \in \mathbb{R}^{1+2k}$: a 1 for the intercept, $+1$ in the
-offensive column of each of its five offensive players, and $-1$ in the
-defensive column of each of the five defenders. Every row has exactly
-eleven nonzero entries. Then @eq:apm is $r_s = x_s^\top \beta +
-\varepsilon_s$.
+@eq:apm is one equation per segment, about 80,000 of them, in about
+1,200 unknowns. To solve them all at once, it helps to write every one
+of them the same way. A league small enough to write out in full shows
+how.
 
-Since segments with more possessions are less noisy, we weight each one
-by its possessions, and choose $\beta$ to minimize
+::: {.example #ex:one-on-one title="A one-on-one league"}
+Suppose a league has three players, and plays one-on-one: in each
+segment one player has the ball and one defends. The unknowns are the
+league average and each player's two ratings, seven numbers in all, and
+we list them in a fixed order:
+$$
+\beta = (\mu,\ o_1,\ o_2,\ o_3,\ d_1,\ d_2,\ d_3).
+$$
+In a segment where player 1 has the ball against player 2, the model
+says $r_s = \mu + o_1 - d_2 + \varepsilon_s$. Write a second list of
+seven numbers, in the same order, saying who was on the floor: a 1 in
+the slot for $\mu$, which is in every segment, $+1$ in the slot for the
+offensive player's $o$, $-1$ in the slot for the defender's $d$, and 0
+everywhere else:
+$$
+x_s = (1,\ 1,\ 0,\ 0,\ 0,\ -1,\ 0).
+$$
+Multiplying the two lists slot by slot and adding gives back exactly the
+right-hand side of the model:
 $$
 \begin{aligned}
-L(\beta) &= \sum_s n_s \left( r_s - x_s^\top \beta \right)^2 \\
-&= (r - X\beta)^\top W (r - X\beta),
+x_s^\top \beta &= 1\cdot\mu + 1\cdot o_1 + 0\cdot o_2 + 0\cdot o_3 \\
+&\quad + 0\cdot d_1 - 1\cdot d_2 + 0\cdot d_3 \\
+&= \mu + o_1 - d_2 .
 \end{aligned}
-$$ {#eq:wls}
-where $X$ has the rows $x_s$, $r$ the rates, and $W = \operatorname{diag}(n_s)$.^[Weighting
-by $n_s$ is exactly right when $\operatorname{Var}(\varepsilon_s) = \sigma^2/n_s$:
-it's the same as dividing each equation by its standard deviation, which
-makes the noise of every row equal, and then ordinary least squares is
-the best linear unbiased estimator (the Gauss–Markov theorem). Rows with
-$n_s = 0$ get no weight at all.] Notice what the weights do to the units:
-$n_s r_s = 100\, y_s$, so a segment counts in proportion to its
-possessions, and every possession of the season counts once.
+$$
+:::
 
-$L$ is a quadratic in $\beta$, so its minimum is where its gradient
-vanishes. Differentiating,
+That sum is the *dot product* of $x_s$ and $\beta$, written $x_s^\top
+\beta$,^[The $\top$ is *transpose*. Treating both lists as columns,
+$x_s^\top$ turns $x_s$ into a row, and a row times a column is the sum
+of the products of their entries: $x^\top \beta = \sum_j x_j \beta_j$.]
+and with it every segment's equation has the same form,
 $$
-\nabla L(\beta) = -2 X^\top W (r - X\beta) = 0,
+r_s = x_s^\top \beta + \varepsilon_s ,
 $$
-so the least squares estimate solves the *normal equations*
+whoever was on the floor. All that changes from segment to segment is
+where the $+1$s and $-1$s go.
+
+The real league works the same way, with $k$ players instead of three
+and five a side instead of one. $\beta$ lists the league average, then
+every player's offensive rating, then every player's defensive rating:
+$1 + 2k$ numbers, which is what $\beta \in \mathbb{R}^{1+2k}$ means, a
+list of $1 + 2k$ real numbers. In 2026, with $k = 582$ players, that's
+1,165 unknowns. Each segment's $x_s$ is a list of the same length, with
+a 1 for $\mu$, $+1$ in the slots of the five offensive players' $o$s,
+$-1$ in the slots of the five defenders' $d$s, and zeros in the other
+1,154.
+
+Finally, stack the segments. Put each $x_s$ as one row of a matrix $X$,
+and the rates in a column $r$. In the one-on-one league, three segments,
+player 1 against 2, 3 against 1 and 2 against 3, give
 $$
-X^\top W X\, \hat\beta = X^\top W r .
+X = \begin{pmatrix}
+1 & 1 & 0 & 0 & 0 & -1 & 0 \\
+1 & 0 & 0 & 1 & -1 & 0 & 0 \\
+1 & 0 & 1 & 0 & 0 & 0 & -1
+\end{pmatrix},
+$$
+and $X\beta$ is the column of the three segments' predicted rates. For
+2026, $X$ has 78,608 rows, one per segment's offense with at least one
+possession, and 1,165 columns.
+
+## Least squares, weighted
+
+Now choose $\beta$ to make the predicted rates as close as possible to
+the actual ones. "Close" means a small sum of squared errors, and since
+a segment with more possessions is less noisy, each segment's squared
+error is weighted by its possessions. We choose $\beta$ to minimize
+$$
+L(\beta) = \sum_s n_s \left( r_s - x_s^\top \beta \right)^2 .
+$$ {#eq:wls}
+In matrix form this is $(r - X\beta)^\top W (r - X\beta)$, where $W$ is
+the diagonal matrix with the $n_s$ down its diagonal; it's the same sum,
+written compactly.^[Weighting by $n_s$ is exactly right when
+$\operatorname{Var}(\varepsilon_s) = \sigma^2/n_s$: it's the same as
+dividing each equation by its standard deviation, which makes the noise
+of every row equal, and then ordinary least squares is the best linear
+unbiased estimator (the Gauss–Markov theorem). Rows with $n_s = 0$ get
+no weight at all.] Notice what the weights do to the units: $n_s r_s =
+100\, y_s$, so a segment counts in proportion to its possessions, and
+every possession of the season counts once.
+
+## Minimizing
+
+$L$ is a function of 1,165 variables, but finding its minimum is first
+year calculus: at the minimum, the derivative with respect to each
+variable is zero. Take one unknown, the $j$th entry $\beta_j$ of
+$\beta$, and write $x_{sj}$ for the $j$th entry of $x_s$. Only the
+factor $x_s^\top\beta = \sum_j x_{sj}\beta_j$ depends on $\beta_j$, and
+its derivative is $x_{sj}$, so by the chain rule
+$$
+\frac{\partial L}{\partial \beta_j} = \sum_s n_s \cdot 2\left(r_s - x_s^\top\beta\right)\cdot\left(-x_{sj}\right) .
+$$
+Setting it to zero and rearranging,
+$$
+\sum_s n_s\, x_{sj}\, \left(x_s^\top \beta\right) = \sum_s n_s\, x_{sj}\, r_s .
+$$ {#eq:normal-j}
+
+This equation has a plain meaning. Take $\beta_j = o_1$, player 1's
+offensive rating. Then $x_{sj}$ is 1 in the segments where player 1 was
+on offense and 0 in all the others, so @eq:normal-j sums over exactly
+player 1's offensive segments. On the right, $n_s r_s = 100\,y_s$ adds
+up to 100 times the points scored with player 1 on offense. On the
+left is 100 times the points the model *predicts* for those same
+possessions. So the equation says: *with player 1 on offense, the fitted
+model predicts exactly as many points as were actually scored.* There's
+one such equation for every unknown, the same for player 1 on defense,
+and so on: 1,165 linear equations in 1,165 unknowns.
+
+Written with matrices, all 1,165 equations at once are the *normal
+equations*
+$$
+X^\top W X\, \hat\beta = X^\top W r ,
 $$ {#eq:normal}
+where the hat marks the solution. The $j$th entry of each side is the
+corresponding side of @eq:normal-j (@exr:normal-j).
 
 The matrix $A = X^\top W X$ has a concrete meaning, and it's worth
 reading entry by entry. Its diagonal entry for $o_i$ is $\sum_s n_s
-(x_s)_i^2$, the possessions player $i$ played on offense. The entry for
+x_{s,o_i}^2$, which counts $n_s$ for every segment with player $i$ on
+offense: the possessions player $i$ played on offense. The entry for
 $o_i$ and $o_j$ is the possessions $i$ and $j$ played *together* on
 offense. The entry for $o_i$ and $d_j$ is minus the possessions $i$
 played on offense *against* $j$. So $A$ is the season's table of who
@@ -249,6 +338,13 @@ is then a sparse matrix product ([line 165](code:yarapm/rapm.py#L165)).
 ::: {.exercise #exr:row}
 Write out the nonzero entries of the row $x_s$ for the Spurs' offense in
 segment 1 of @tbl:first-segments, and its weight and target $r_s$.
+:::
+
+::: {.exercise #exr:normal-j}
+Check that the $j$th entry of $X^\top W r$ is $\sum_s n_s x_{sj} r_s$, and
+that the $j$th entry of $X^\top W X \beta$ is the left side of
+@eq:normal-j. For the three segments of the one-on-one league, with
+possessions 4, 2 and 3, write out $X^\top W X$.
 :::
 
 ::: {.exercise #exr:psd}

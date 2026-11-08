@@ -275,7 +275,10 @@ local function reference(id, suppress)
   end
   local text
   if target.name == "Equation" then
-    text = "(" .. target.number .. ")"
+    -- "Equation (3.1)", as figures are "Figure 3.1": a bare (3.1) reads
+    -- like a formula of its own
+    text = suppress and "(" .. target.number .. ")"
+      or "Equation\u{a0}(" .. target.number .. ")"
   elseif suppress then
     text = target.number
   else
