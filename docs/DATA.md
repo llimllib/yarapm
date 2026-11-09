@@ -71,12 +71,20 @@ team's roster as of the day (see `minutes`) or with possessions this
 season. There are no rows for the offseason: a player's ratings don't move
 without games, until a new season's prior.
 
+The model's ratings have no fixed zero: adding a constant to every
+player's offense (or defense) changes no prediction, since the league
+average absorbs it, and where the fit leaves it drifts from day to day.
+So each day's ratings, priors included, are shifted to average 0 over
+the day's lineups, weighted by expected minutes (`min` in
+`team_players_daily`): the average team that `off`, `def` and `net` in
+`team_ratings_daily` are relative to.
+
 | Column | Type | Description |
 |--------|------|-------------|
 | season, as_of_date, player_id | | Key |
 | team_id | VARCHAR | The team whose roster they're on, as of the day: NULL if none. A player who's changed teams is on their new team's once they've played for it |
-| o_rating, d_rating, rating | DOUBLE | Offensive, defensive and total rating: points per 100 possessions above average that the player adds on the floor, positive is good |
-| o_prior, d_prior | DOUBLE | The box-score prior the ratings are pulled toward. A player with no possessions in the fit is rated at their prior |
+| o_rating, d_rating, rating | DOUBLE | Offensive, defensive and total rating: points per 100 possessions above average that the player adds on the floor, positive is good. 0 is the average player in that day's lineups: weighted by today's minutes in `team_players_daily`, each is 0, within rounding |
+| o_prior, d_prior | DOUBLE | The box-score prior the ratings are pulled toward, on the same scale. A player with no possessions in the fit is rated at their prior |
 | possessions | INTEGER | Offensive possessions on the floor this season before the day |
 | commit, settings | VARCHAR | The yarapm commit and model settings (JSON) that rated the day |
 | model_version | VARCHAR | A hash of the code and locked dependencies that rated the day, and the first season of play-by-play (the prior learns from every season before): the same for every row of a season, and of every daily dataset's season |

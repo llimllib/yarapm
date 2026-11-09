@@ -201,10 +201,11 @@ def tables(
     )
 
 
-def team_days(teams_by_day, full=240.0, shift=0.0):
+def team_days(teams_by_day, full=240.0, shift=0.0, player_shift=0.0):
     """
     Daily rows for `teams_by_day` (day -> number of teams): team i's full
-    offense is i minus the average (+ `shift`), and eight players each
+    offense is i minus the average (+ `shift`), and eight players each,
+    rated ±1 around 0 (+ `player_shift`)
     """
     out = {}
     for day, n in teams_by_day.items():
@@ -213,7 +214,15 @@ def team_days(teams_by_day, full=240.0, shift=0.0):
             for i in range(n)
         ]
         members = [
-            (team, f"{team}p{j}", full / 8, 30.0, 0.9, 1.0, -1.0)
+            (
+                team,
+                f"{team}p{j}",
+                full / 8,
+                30.0,
+                0.9,
+                (-1) ** j + player_shift,
+                -((-1) ** j),
+            )
             for team, *_ in teams
             for j in range(8)
         ]
@@ -377,3 +386,19 @@ def test_validate_teams():
         )
         with pytest.raises(ValueError, match=message):
             validate(con, 1)
+
+
+def test_validate_players_centered():
+    con = duckdb.connect()
+    tables(con)
+    validate(con, 1)
+    team_tables(
+        con,
+        team_days({date(2026, 11, 1): 30}, player_shift=0.5),
+        "c",
+        "{}",
+        "v",
+        dict.fromkeys(DAILY),
+    )
+    with pytest.raises(ValueError, match="player ratings are centered"):
+        validate(con, 1)

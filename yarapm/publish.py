@@ -182,11 +182,14 @@ def commit() -> str:
     return sha if clean else f"{sha}-dirty"
 
 
-def ratings(model: PlayerRatings, history: History) -> list[tuple]:
+def ratings(
+    model: PlayerRatings, history: History, center: tuple[float, float] = (0.0, 0.0)
+) -> list[tuple]:
     """
     (player_id, team_id, o_rating, d_rating, o_prior, d_prior, possessions)
     as of the cutoff the model was fit on, for each player on a roster or
-    with possessions this season. `team_id` is the roster's, if any
+    with possessions this season, less `center` (offense, defense).
+    `team_id` is the roster's, if any
     """
     assert isinstance(model.projection, ProjectedMinutes)
     poss = dict(
@@ -206,10 +209,10 @@ def ratings(model: PlayerRatings, history: History) -> list[tuple]:
             (
                 p,
                 teams.get(p),
-                o,
-                d,
-                model.prior_weight * prior_o,
-                model.prior_weight * prior_d,
+                o - center[0],
+                d - center[1],
+                model.prior_weight * prior_o - center[0],
+                model.prior_weight * prior_d - center[1],
                 poss.get(p, 0),
             )
         )
@@ -236,8 +239,13 @@ def day_rows(model: PlayerRatings, history: History) -> Daily:
     rated, mean = team_ratings(teams, model.strength)
     # the average team's points per 100 possessions against the average team
     average = model.level + mean.off - mean.dfn
+    # players are centered on the average team's lineup today, so 0 is the
+    # average player in today's lineups. The model's own zero is wherever
+    # the fit leaves it, and drifts from day to day; predictions don't
+    # depend on it, since the league average absorbs any constant
+    center = (mean.off / 5, mean.dfn / 5)
     return Daily(
-        ratings(model, history),
+        ratings(model, history, center),
         [(t, r.full_off, r.full_def, r.off, r.dfn, average) for t, r in rated.items()],
         [
             (
@@ -246,7 +254,7 @@ def day_rows(model: PlayerRatings, history: History) -> Daily:
                 lineup.full.get(p, 0.0),
                 lineup.today.get(p, 0.0),
                 lineup.chances.get(p, 0.0),
-                *model.rating(p),
+                *(r - c for r, c in zip(model.rating(p), center)),
             )
             for team, lineup in teams.items()
             for p in sorted(set(lineup.full) | set(lineup.today))
@@ -943,6 +951,11 @@ def validate(con: duckdb.DuckDBPyConnection, games: int | None) -> None:
             SELECT coalesce(bool_and(abs(full_total - 240) < 0.15 AND abs(today_total - 240) < 0.15), true)
             FROM (SELECT sum(full_min) AS full_total, sum(min) AS today_total
                 FROM team_players_daily GROUP BY as_of_date, team_id)""",
+        "player ratings are centered on today's lineups": """
+            SELECT coalesce(bool_and(abs(o) < 0.01 AND abs(d) < 0.01), true)
+            FROM (SELECT sum(min * o_rating) / sum(min) AS o,
+                    sum(min * d_rating) / sum(min) AS d
+                FROM team_players_daily GROUP BY as_of_date)""",
         "ratings are plausible": """
             SELECT coalesce(bool_and(abs(o_rating) < 30 AND abs(d_rating) < 30
                 AND abs(o_prior) < 30 AND abs(d_prior) < 30

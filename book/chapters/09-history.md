@@ -15,7 +15,9 @@ A player's rating *as of day $t$* is their rating in the model fit on
 the games before $t$. The published dataset `ratings_daily` has one row
 per player and game day of each season, and one for the day after each
 season's last game, with the offensive and defensive ratings, the
-box-score prior and the possessions played so far that season.
+box-score prior and the possessions played so far that season. Each
+day's ratings are relative to that day's average player: weighted by
+their expected minutes in the day's lineups, they average 0.
 :::
 
 Because each day's fit only sees the past, a player's ratings over time
