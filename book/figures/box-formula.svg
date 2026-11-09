@@ -8,24 +8,24 @@
 <path d="M 0 1 L 9 5 L 0 9 z" fill="#1a1a1a"/></marker>
 </defs>
 <line x1="315" y1="20" x2="315" y2="326" stroke="#1a1a1a" stroke-width="1.0"/>
-<rect x="315" y="23" width="67.1" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
-<rect x="290.4" y="40" width="24.6" height="11" rx="0" fill="url(#hatch)" stroke="#1a1a1a" stroke-width="0.7"/>
-<rect x="315" y="57" width="11.2" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
-<rect x="313.7" y="74" width="1.3" height="11" rx="0" fill="url(#hatch)" stroke="#1a1a1a" stroke-width="0.7"/>
-<rect x="315" y="91" width="59.9" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
-<rect x="279.7" y="108" width="35.3" height="11" rx="0" fill="url(#hatch)" stroke="#1a1a1a" stroke-width="0.7"/>
-<rect x="315" y="125" width="45.4" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
-<rect x="306.9" y="142" width="8.1" height="11" rx="0" fill="url(#hatch)" stroke="#1a1a1a" stroke-width="0.7"/>
-<rect x="315" y="159" width="11.4" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
+<rect x="315" y="23" width="74.7" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
+<rect x="284.2" y="40" width="30.8" height="11" rx="0" fill="url(#hatch)" stroke="#1a1a1a" stroke-width="0.7"/>
+<rect x="315" y="57" width="4.6" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
+<rect x="312.3" y="74" width="2.7" height="11" rx="0" fill="url(#hatch)" stroke="#1a1a1a" stroke-width="0.7"/>
+<rect x="315" y="91" width="61.5" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
+<rect x="278.9" y="108" width="36.1" height="11" rx="0" fill="url(#hatch)" stroke="#1a1a1a" stroke-width="0.7"/>
+<rect x="315" y="125" width="43.8" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
+<rect x="307.8" y="142" width="7.2" height="11" rx="0" fill="url(#hatch)" stroke="#1a1a1a" stroke-width="0.7"/>
+<rect x="315" y="159" width="10.3" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
 <rect x="300.4" y="176" width="14.6" height="11" rx="0" fill="url(#hatch)" stroke="#1a1a1a" stroke-width="0.7"/>
-<rect x="315" y="193" width="6.7" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
-<rect x="284" y="210" width="31" height="11" rx="0" fill="url(#hatch)" stroke="#1a1a1a" stroke-width="0.7"/>
-<rect x="315" y="227" width="9.8" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
-<rect x="315" y="244" width="58.7" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
-<rect x="315" y="261" width="32.3" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
-<rect x="315" y="278" width="10.3" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
-<rect x="315" y="295" width="0.4" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
-<rect x="312.6" y="312" width="2.4" height="11" rx="0" fill="url(#hatch)" stroke="#1a1a1a" stroke-width="0.7"/>
+<rect x="315" y="193" width="9.4" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
+<rect x="288.4" y="210" width="26.6" height="11" rx="0" fill="url(#hatch)" stroke="#1a1a1a" stroke-width="0.7"/>
+<rect x="315" y="227" width="11.4" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
+<rect x="315" y="244" width="50.4" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
+<rect x="315" y="261" width="33.6" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
+<rect x="315" y="278" width="11" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
+<rect x="315" y="295" width="0.1" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
+<rect x="312.4" y="312" width="2.6" height="11" rx="0" fill="url(#hatch)" stroke="#1a1a1a" stroke-width="0.7"/>
 <line x1="258.3" y1="326" x2="258.3" y2="330" stroke="#1a1a1a" stroke-width="1.0"/>
 <text x="258.3" y="342" font-size="11" text-anchor="middle" fill="#1a1a1a">-1</text>
 <line x1="315" y1="326" x2="315" y2="330" stroke="#1a1a1a" stroke-width="1.0"/>
@@ -34,24 +34,24 @@
 <text x="371.7" y="342" font-size="11" text-anchor="middle" fill="#1a1a1a">+1</text>
 <text x="400" y="12" font-size="12" text-anchor="end" fill="#1a1a1a" font-style="italic">(a) offense</text>
 <line x1="525" y1="20" x2="525" y2="326" stroke="#1a1a1a" stroke-width="1.0"/>
-<rect x="377.6" y="23" width="147.4" height="11" rx="0" fill="url(#hatch)" stroke="#1a1a1a" stroke-width="0.7"/>
-<rect x="525" y="40" width="96.4" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
-<rect x="525" y="57" width="66.3" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
-<rect x="525" y="74" width="32.9" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
-<rect x="525" y="91" width="20" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
-<rect x="500.4" y="108" width="24.6" height="11" rx="0" fill="url(#hatch)" stroke="#1a1a1a" stroke-width="0.7"/>
-<rect x="496.9" y="125" width="28.1" height="11" rx="0" fill="url(#hatch)" stroke="#1a1a1a" stroke-width="0.7"/>
-<rect x="525" y="142" width="25.3" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
-<rect x="525" y="159" width="31.6" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
+<rect x="366.9" y="23" width="158.1" height="11" rx="0" fill="url(#hatch)" stroke="#1a1a1a" stroke-width="0.7"/>
+<rect x="525" y="40" width="105.1" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
+<rect x="525" y="57" width="72.6" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
+<rect x="525" y="74" width="36.4" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
+<rect x="525" y="91" width="19.4" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
+<rect x="498.8" y="108" width="26.2" height="11" rx="0" fill="url(#hatch)" stroke="#1a1a1a" stroke-width="0.7"/>
+<rect x="494.7" y="125" width="30.3" height="11" rx="0" fill="url(#hatch)" stroke="#1a1a1a" stroke-width="0.7"/>
+<rect x="525" y="142" width="26.4" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
+<rect x="525" y="159" width="31.7" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
 <rect x="525" y="176" width="27.7" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
-<rect x="525" y="193" width="9.9" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
-<rect x="497.2" y="210" width="27.8" height="11" rx="0" fill="url(#hatch)" stroke="#1a1a1a" stroke-width="0.7"/>
-<rect x="525" y="227" width="0.6" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
-<rect x="525" y="244" width="63" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
-<rect x="525" y="261" width="21.5" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
-<rect x="525" y="278" width="12.2" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
-<rect x="525" y="295" width="3.7" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
-<rect x="525" y="312" width="5.7" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
+<rect x="525" y="193" width="10.2" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
+<rect x="493" y="210" width="32" height="11" rx="0" fill="url(#hatch)" stroke="#1a1a1a" stroke-width="0.7"/>
+<rect x="524.8" y="227" width="0.2" height="11" rx="0" fill="url(#hatch)" stroke="#1a1a1a" stroke-width="0.7"/>
+<rect x="525" y="244" width="70.7" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
+<rect x="525" y="261" width="21.3" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
+<rect x="525" y="278" width="12.3" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
+<rect x="525" y="295" width="3.4" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
+<rect x="525" y="312" width="5" height="11" rx="0" fill="#d9d6ca" stroke="#1a1a1a" stroke-width="0.7"/>
 <line x1="468.3" y1="326" x2="468.3" y2="330" stroke="#1a1a1a" stroke-width="1.0"/>
 <text x="468.3" y="342" font-size="11" text-anchor="middle" fill="#1a1a1a">-1</text>
 <line x1="525" y1="326" x2="525" y2="330" stroke="#1a1a1a" stroke-width="1.0"/>

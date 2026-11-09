@@ -937,7 +937,7 @@ def wembanyama() -> Svg:
     s = Svg(
         640,
         240,
-        "Line chart: Wembanyama's rating rose from about +1.5 to +4.4 through his rookie season, pulling away from his box-score prior",
+        "Line chart: Wembanyama's rating rose from about +0.6 to +3.2 through his rookie season, pulling away from his box-score prior",
     )
     a = Axes(s, 60, 15, 510, 170, (0, 240), (-1, 5))
     months = [
@@ -1145,7 +1145,7 @@ def published():
 
 @figure("george")
 def george() -> Svg:
-    """Paul George's ratings as of each day, 2018 to now"""
+    """Paul George's ratings as of each day, 2012 to now"""
     from datetime import date
 
     con = published()
@@ -1171,7 +1171,7 @@ def george() -> Svg:
     s = Svg(
         640,
         270,
-        "Line chart of Paul George's rating from 2014 to 2027: four to six in Indiana, near +7 from 2019 to 2024, under +4 since",
+        "Line chart of Paul George's rating from 2012 to 2027: three to five in Indiana, five to six from 2019 to 2024, under +3 since",
     )
     a = Axes(s, 60, 25, 560, 180, (0, span), (-2, 10))
     a.frame(

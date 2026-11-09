@@ -2,5 +2,5 @@ book-title: The Expected Score
 book-subtitle: How yarapm rates NBA players and predicts games
 # the commit the text describes: "In the code" links point at it. Move it
 # forward when a chapter is checked against newer code
-code-commit: 38f8693cd7ec6b2dce5a02952f42ff8524709307
+code-commit: b3bff0165f56d0e1401453f48a95b510c36f760f
 lang: en

@@ -30,7 +30,7 @@ They're for readers who want to check, change or reuse the program, and
 the rest of the text doesn't depend on them.
 
 **Numbers.** The ratings and predictions quoted are a snapshot, from
-the published data of November 5, 2026 (model version `bc77b52137c7`),
+the published data of November 9, 2026 (model version `e0125ad35d45`),
 and the code links point at the commit the text describes. Both move as
 the data grows, so a rating looked up today may differ in the last digit.
 The model is tuned on the 2021–2024 seasons and was tested once on
