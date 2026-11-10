@@ -57,7 +57,13 @@ def load_results(con: duckdb.DuckDBPyConnection, where: str = "true") -> None:
     Temp table `results`: one row per game, from the home team's side (at a
     neutral site, the team with the lower id), with each side's points and
     the NBA's possession count, and the game's length in minutes. `home` is
-    NULL at a neutral site
+    NULL at a neutral site.
+
+    A game whose possessions or minutes are NULL or 0 on either side is left
+    out until they're filled in: the NBA's advanced box score can lag a
+    game that just ended, and nba_data's first update after a late game has
+    had it with 0 possessions, which turned the fits into NaN and stopped
+    the publish build. No finished game has them missing
     """
     con.execute(f"""
         CREATE OR REPLACE TEMP TABLE results AS
@@ -73,5 +79,6 @@ def load_results(con: duckdb.DuckDBPyConnection, where: str = "true") -> None:
         WHERE t.team_id = coalesce(
             CASE WHEN g.neutral THEN NULL ELSE g.home_team_id END,
             least(t.team_id, t.opp_team_id))
+            AND t.poss > 0 AND o.poss > 0 AND t.min > 0 AND o.min > 0
         ORDER BY g.game_date, g.game_id
     """)
