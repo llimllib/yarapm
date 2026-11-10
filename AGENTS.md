@@ -18,7 +18,7 @@ Commands (tools come from `mise.toml`):
 - `yarapm/catalog.py`: `connect()`, and `write_season()`/`read()` for `out/`
 - `yarapm/games.py`: which games we model (regular season, play-in, playoffs, Cup final; the 2020 bubble is neutral) and `load_results()`, one row per game from the home side
 - `yarapm/segments.py`: the lineup segments (#2); its docstring has the rules for placing plays and crediting possessions, and the columns
-- `yarapm/harness.py`: `Game`, `Prediction`, `History`, the `Model` protocol, `run()` and the metrics. Phases: `early`, `mid`, `post_deadline`, `playoffs`
+- `yarapm/harness.py`: `Game`, `Prediction`, `History`, the `Model` protocol, `run()` and the metrics. Phases: `early`, `mid`, `post_deadline`, `playoffs`. Every run also scores the closing betting line (`nba.betting_lines`, from 2012) on the same games as a benchmark (`line_margin_rmse`, `line_total_rmse`, `line_log_loss`); models never see it
 - `yarapm/fit.py`: `decay()` (half-life weights) and `weighted_ridge()`, shared by the models
 - `yarapm/tempo.py`, `yarapm/baselines.py`: adjusted tempo, and the `home` and `team` models
 - `yarapm/rapm.py`: the sparse ridge RAPM solver (#6), pulling each player toward a prior
@@ -47,6 +47,7 @@ Daily refits, 2021-2024 (the scoreboard is kept in #24):
 | `rapm` with the box-score prior, actual minutes | 13.62 | 0.613 | 18.40 | 4.57 | |
 | `rapm` with the box-score prior, known availability | 13.58 | 0.613 | 18.35 | 4.57 | 4.73 |
 | `openrapm` (this season's: leaks, a ceiling; actual minutes) | 13.06 | 0.591 | 17.96 | 4.57 | |
+| closing line (5,132 games: knows injury news) | 13.40 | 0.609 | 18.00 | | |
 
 The holdout, 2025-2026 (2,643 games), was scored once with every setting fixed (#12). Don't tune on it:
 

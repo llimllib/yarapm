@@ -141,3 +141,29 @@ def test_score():
     assert metrics["early"]["poss_bias"] == 2
     # predicted margin of +10 with a spread of 10: 84% to win, and they won
     assert metrics["early"]["brier"] == pytest.approx((1 - 0.8413) ** 2, abs=1e-4)
+    # no lines
+    assert metrics["all"]["line_games"] == 0
+    assert metrics["all"]["line_margin_rmse"] is None
+    assert metrics["all"]["line_log_loss"] is None
+
+
+def test_score_lines():
+    con = duckdb.connect()
+    predictions = con.sql("""
+        SELECT * FROM (VALUES
+            ('early', 110.0, 100.0, 120, 100, NULL, 98.0, 14.0, 215.0),
+            ('early', 100.0, 110.0, 100, 106, NULL, 95.0, -12.0, 210.0),
+            ('playoffs', 100.0, 110.0, 100, 100, NULL, 95.0, NULL, NULL))
+        v(phase, pred_pts, pred_opp_pts, pts, opp_pts, pred_poss, poss,
+            line_margin, line_total)
+    """)
+    metrics = {m["phase"]: m for m in score(predictions)}
+    # line errors -6 and -6 (margin), -5 and +4 (total), on the games with one
+    assert metrics["all"]["games"] == 3
+    assert metrics["all"]["line_games"] == 2
+    assert metrics["all"]["line_margin_rmse"] == 6
+    assert metrics["all"]["line_total_rmse"] == pytest.approx((41 / 2) ** 0.5)
+    # +14 and -12 with a spread of 6: both right, at 99.0% and 97.7%
+    assert metrics["early"]["line_log_loss"] == pytest.approx(0.0164, abs=1e-4)
+    assert metrics["playoffs"]["line_games"] == 0
+    assert metrics["playoffs"]["line_margin_rmse"] is None

@@ -37,6 +37,13 @@ Win probability is P(margin > 0) for a normal centered on the predicted
 margin, with a spread of the run's margin RMSE; it's scored with log loss
 and Brier score.
 
+The closing betting line is scored beside every model, on the games that
+have one (`line_games`), as a benchmark: `line_margin_rmse`,
+`line_total_rmse` and `line_log_loss`, its win probability taken the same
+way from its own RMSE. It isn't in `History`, so no model sees it. The
+close knows the injury news that only a model with known availability
+has.
+
 A model that projects each player's minutes (`Prediction.minutes`) is also
 scored on them: `minutes_mae` is the mean absolute error per player, over
 everyone projected or who played (missing ones count as 0), against the
@@ -291,10 +298,12 @@ def run(
         SELECT '{rid}' AS run_id, r.season, r.game_id, r.game_date, r.game_type,
             ph.phase, r.team_id, r.opp_team_id, r.home,
             p.pred_pts, p.pred_opp_pts, r.pts, r.opp_pts,
-            p.pred_poss, (r.poss + r.opp_poss) / 2 AS poss
+            p.pred_poss, (r.poss + r.opp_poss) / 2 AS poss,
+            l.line_margin, l.line_total
         FROM predicted p
         JOIN results r USING (game_id)
         JOIN ({phases()}) ph USING (game_id)
+        LEFT JOIN ({lines_query(con)}) l USING (game_id)
         ORDER BY r.game_date, r.game_id
     """)
     con.unregister("predicted")
@@ -410,11 +419,74 @@ def minutes_errors(
     con.unregister("projected")
 
 
+def lines_query(con: duckdb.DuckDBPyConnection) -> str:
+    """
+    SQL for each game's closing line from `results`' team's side, from the
+    temp table `lines` if it's loaded: (game_id, line_margin, line_total)
+    """
+    loaded = con.execute(
+        "SELECT count(*) FROM duckdb_tables() WHERE temporary AND table_name = 'lines'"
+    ).fetchall()[0][0]
+    if not loaded:
+        return """SELECT NULL::VARCHAR AS game_id, NULL::DOUBLE AS line_margin,
+            NULL::DOUBLE AS line_total WHERE false"""
+    return "FROM lines"
+
+
+def load_lines(con: duckdb.DuckDBPyConnection) -> None:
+    """
+    Temp table `lines`: each game in `results`' closing spread as the
+    margin it predicts for `team_id`, and its total. nba.betting_lines has
+    a row per provider: prefer ESPN's books (DraftKings, then ESPN BET),
+    then The Odds API's consensus, then sportsbookreview's archive, as its
+    data dictionary advises. A line whose teams don't match the game's is
+    dropped
+    """
+    seasons = ", ".join(
+        str(s) for (s,) in con.execute("SELECT DISTINCT season FROM results").fetchall()
+    )
+    con.execute(f"""
+        CREATE OR REPLACE TEMP TABLE lines AS
+        WITH ranked AS (
+            SELECT b.game_id,
+                CASE r.team_id
+                    WHEN b.home_team_id THEN -b.close_spread
+                    WHEN b.away_team_id THEN b.close_spread
+                END AS line_margin,
+                b.close_total AS line_total,
+                CASE b.provider_id WHEN '100' THEN 1 WHEN '58' THEN 2
+                    WHEN 'odds_api_consensus' THEN 3 ELSE 4 END AS rank
+            FROM nba.betting_lines b
+            JOIN results r USING (season, game_id)
+            WHERE b.season IN ({seasons})
+                AND b.provider_id IN ('100', '58', 'odds_api_consensus', 'sbr')
+                AND list_sort([r.team_id, r.opp_team_id])
+                    = list_sort([b.home_team_id, b.away_team_id])
+        )
+        SELECT game_id,
+            arg_min(line_margin, rank) FILTER (WHERE line_margin IS NOT NULL)
+                AS line_margin,
+            arg_min(line_total, rank) FILTER (WHERE line_total IS NOT NULL)
+                AS line_total
+        FROM ranked GROUP BY game_id
+    """)
+
+
 def score(predictions: duckdb.DuckDBPyRelation) -> list[dict[str, Any]]:
-    """Metrics for every game ("all") and each phase"""
+    """
+    Metrics for every game ("all") and each phase, and the closing line's if
+    `predictions` has `line_margin` and `line_total`
+    """
+    has_lines = {"line_margin", "line_total"} <= set(predictions.columns)
     cols = predictions.select(
         "phase, pred_pts, pred_opp_pts, pts, opp_pts, "
-        "coalesce(pred_poss, 'nan'::DOUBLE) AS pred_poss, poss"
+        "coalesce(pred_poss, 'nan'::DOUBLE) AS pred_poss, poss, "
+        + (
+            "coalesce(line_margin, 'nan'::DOUBLE) AS line_margin, "
+            "coalesce(line_total, 'nan'::DOUBLE) AS line_total"
+            if has_lines
+            else "'nan'::DOUBLE AS line_margin, 'nan'::DOUBLE AS line_total"
+        )
     ).fetchnumpy()
     pred_poss = np.asarray(cols["pred_poss"], dtype=float)
     poss = np.asarray(cols["poss"], dtype=float)
@@ -426,6 +498,15 @@ def score(predictions: duckdb.DuckDBPyRelation) -> list[dict[str, Any]]:
     sigma = float(np.sqrt(np.mean((pred_margin - margin) ** 2)))
     win_prob = np.clip(ndtr(pred_margin / max(sigma, 1e-9)), 1e-6, 1 - 1e-6)
     won = margin > 0
+    line_margin = np.asarray(cols["line_margin"], dtype=float)
+    line_total = np.asarray(cols["line_total"], dtype=float)
+    lined = ~np.isnan(line_margin)
+    line_sigma = (
+        float(np.sqrt(np.mean((line_margin[lined] - margin[lined]) ** 2)))
+        if lined.any()
+        else np.nan
+    )
+    line_prob = np.clip(ndtr(line_margin / max(line_sigma, 1e-9)), 1e-6, 1 - 1e-6)
 
     metrics = []
     for name in ["all", "early", "mid", "post_deadline", "playoffs"]:
@@ -437,6 +518,11 @@ def score(predictions: duckdb.DuckDBPyRelation) -> list[dict[str, Any]]:
         p, y = win_prob[i], won[i]
         # NaN for a model that doesn't predict possessions
         poss_err = pred_poss[i] - poss[i]
+        j = i & lined
+        line_err = line_margin[j] - margin[j]
+        line_total_err = line_total[i] - actual[i].sum(axis=1)
+        line_total_err = line_total_err[~np.isnan(line_total_err)]
+        lp, ly = line_prob[j], won[j]
         metrics.append(
             {
                 "phase": name,
@@ -453,17 +539,30 @@ def score(predictions: duckdb.DuckDBPyRelation) -> list[dict[str, Any]]:
                 "sigma": sigma,
                 "log_loss": float(-(y * np.log(p) + (~y) * np.log(1 - p)).mean()),
                 "brier": float(((p - y) ** 2).mean()),
+                "line_games": int(j.sum()),
+                "line_margin_rmse": rmse(line_err),
+                "line_total_rmse": rmse(line_total_err),
+                "line_log_loss": (
+                    float(-(ly * np.log(lp) + (~ly) * np.log(1 - lp)).mean())
+                    if j.any()
+                    else None
+                ),
             }
         )
     return metrics
 
 
+def rmse(errors: np.ndarray) -> float | None:
+    return float(np.sqrt((errors**2).mean())) if len(errors) else None
+
+
 def load(con: duckdb.DuckDBPyConnection, out: Path = OUT) -> None:
     """
     The tables `History` reads: `results`, `player_games`, `bio`,
-    `openrapm`, and `all_segments` if built
+    `openrapm`, and `all_segments` if built; and `lines`, for scoring
     """
     load_results(con)
+    load_lines(con)
     # `started` is NULL for a game without rotations (before 2019)
     con.execute("""
         CREATE OR REPLACE TEMP TABLE player_games AS
@@ -552,7 +651,10 @@ def main(argv: list[str] | None = None) -> None:
                 round(total_rmse, 2) AS total_rmse, round(total_bias, 2) AS total_bias,
                 round(score_rmse, 2) AS score_rmse, round(poss_rmse, 2) AS poss_rmse,
                 round(log_loss, 4) AS log_loss,
-                round(brier, 4) AS brier{minutes_mae}
+                round(brier, 4) AS brier{minutes_mae}, line_games,
+                round(line_margin_rmse, 2) AS line_margin_rmse,
+                round(line_total_rmse, 2) AS line_total_rmse,
+                round(line_log_loss, 4) AS line_log_loss
             FROM read_parquet('{path}')
         """)
     )
