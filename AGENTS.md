@@ -93,6 +93,7 @@ Plans and progress live in GitHub issues on `llimllib/yarapm`, not in docs. Use 
 - **Tracking issue #24** has the design summary and a task list of every work issue by milestone. Keep it current when issues are added or closed
 - **Milestones**, in build order (use the exact title with `gh issue create --milestone`): `1. Lineup segments`, `2. Walk-forward harness & team baseline`, `3. Player ratings`, `4. Projected minutes & final evaluation`, `5. Publishing`, `6. Rating history`
 - **Experiments:** ideas to try later are issues labeled `experiment`, with no milestone. Each says what to try and what result would show it worked. When something comes up that's out of scope, open one rather than doing it. Report results in the issue, citing the harness run's settings, and judge them on the tuning seasons only
+- **Negative results count:** record them as carefully as positive ones. Close a finished experiment with its verdict as the last comment ("Negative: margin RMSE 13.62 vs 13.585 ..."), as "not planned" if it wasn't adopted, and give its line in #24's Experiments list the same one-line verdict, so #24 is the index of what's been tried
 - Close work issues from the commit that finishes them (`Closes #N`), and check that CI passes
 - Creating issues and pushing are visible to others: confirm with the user first unless they've asked for it
 
