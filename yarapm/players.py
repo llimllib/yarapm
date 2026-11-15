@@ -2,10 +2,10 @@
 PlayerRatings: each team's expected score from its players' ratings (#8).
 
 Ratings are ridge RAPM (yarapm.rapm) on the segments before the fit date,
-with older games weighted less (`half_life`, in days) and each player
-pulled by `ridge` possessions toward their box-score prior
-(yarapm.prior) × `prior_weight`: 0 is plain RAPM. Players without segments
-are rated at their prior. The covariates are a league average, an offset
+with older games weighted less (`half_life`, in days of the season, see
+below) and each player pulled by `ridge` possessions toward their
+box-score prior (yarapm.prior) × `prior_weight`: 0 is plain RAPM.
+Players without segments are rated at their prior. The covariates are a league average, an offset
 for each season pulled toward it by `season_ridge` possessions, home court
 (+1 for the home offense, -1 for the away one) and a playoff term.
 
@@ -26,8 +26,18 @@ played, a leak that measures rating error on its own), "known" (who plays
 is known, minutes projected) or "unknown" (who plays is projected too),
 with `minutes_half_life` and `start_bonus`.
 
-The defaults are the best of a grid on the tuning seasons (#8), weekly
-refits, by margin RMSE: half life 180-1460 days, ridge 1000-30000, prior
+A game's age counts only days in a season, regular season to Finals:
+the breaks between seasons (about 128 days) are skipped, so the summer
+doesn't pull every player toward their prior before a new season's first
+game (#43). `offseason=True` counts calendar days, as before #43. On the
+tuning seasons the two predict the same (daily margin RMSE 13.570 with
+240 in-season days, 13.568 with 365 calendar days); in-season ageing was
+chosen so that a player's rating doesn't drop over a summer with no
+games. 240 days, about one season, keeps about the memory of 365
+calendar days.
+
+The other defaults are the best of a grid on the tuning seasons (#8), weekly
+refits, by margin RMSE: half life 180-1460 calendar days, ridge 1000-30000, prior
 weight 0.7-1.6, box half life 180-730 and level half life 7-60. It's flat
 near the best: half lives of 365-730 days, ridges of 3000-10000 and prior
 weights of 1-1.3 are within 0.03 points, so the simplest were kept. The
@@ -51,26 +61,29 @@ TARGET_RIDGE = 3000
 
 
 def lineups(
-    history: History, half_life: float, where: str = "true"
-) -> tuple[rapm.Lineups, list[int], np.ndarray]:
+    history: History, half_life: float, where: str = "true", offseason: bool = True
+) -> tuple[rapm.Lineups, list[int], np.ndarray, np.ndarray]:
     """
     The segments matching `where` that still carry weight, with covariates:
     an intercept, one column per season, home and playoffs. Returns the
-    seasons, and each row's age in days
+    seasons, each row's age in days, and its age for weighting: the same,
+    or with `offseason` false, without the breaks between seasons
     """
     types = ", ".join(f"'{t}'" for t in PLAYOFF_TYPES)
     t = (
         history.segments.select(f"""
         season, date_diff('day', game_date, DATE '{history.cutoff}') AS age,
+        {history.age(offseason)} AS weight_age,
         off_player_ids, def_player_ids, poss, pts,
         CASE WHEN off_home THEN 1 WHEN NOT off_home THEN -1 ELSE 0 END AS home,
         game_type IN ({types}) AS playoffs
     """)
-        .filter(f"age <= {HALF_LIVES * half_life} AND ({where})")
+        .filter(f"weight_age <= {HALF_LIVES * half_life} AND ({where})")
         .to_arrow_table()
     )
     season = t["season"].to_numpy()
     age = t["age"].to_numpy().astype(float)
+    weight_age = t["weight_age"].to_numpy().astype(float)
     seasons = sorted(set(season.tolist()))
     covariates = np.c_[
         np.ones(len(season)),
@@ -83,10 +96,10 @@ def lineups(
         t["def_player_ids"].combine_chunks(),
         t["poss"].to_numpy(),
         t["pts"].to_numpy(),
-        decay(age, half_life),
+        decay(weight_age, half_life),
         covariates,
     )
-    return rows, seasons, age
+    return rows, seasons, age, weight_age
 
 
 def penalties(seasons: list[int], season_ridge: float) -> np.ndarray:
@@ -99,7 +112,7 @@ class PlayerRatings:
 
     def __init__(
         self,
-        half_life: float = 365,
+        half_life: float = 240,
         ridge: float = 3000,
         season_ridge: float = 20000,
         level_half_life: float = 7,
@@ -110,14 +123,17 @@ class PlayerRatings:
         minutes: str = "known",
         minutes_half_life: float = 5,
         start_bonus: float = 5,
+        offseason: bool = False,
+        box_offseason: bool = True,
     ):
         self.half_life = half_life
+        self.offseason = offseason
         self.ridge = ridge
         self.season_ridge = season_ridge
         self.level_half_life = level_half_life
         self.prior_weight = prior_weight
         self.box_half_life = box_half_life
-        self.prior: BoxPrior | OpenRapmPrior = BoxPrior(box_half_life)
+        self.prior: BoxPrior | OpenRapmPrior = BoxPrior(box_half_life, box_offseason)
         self.tempo = Tempo(tempo_half_life, tempo_ridge)
         self.minutes = minutes
         self.projection: ActualMinutes | ProjectedMinutes = (
@@ -132,28 +148,43 @@ class PlayerRatings:
 
     @property
     def settings(self) -> dict[str, Any]:
-        return {
-            "half_life": self.half_life,
-            "ridge": self.ridge,
-            "season_ridge": self.season_ridge,
-            "level_half_life": self.level_half_life,
-            "prior_weight": self.prior_weight,
-            "box_half_life": self.box_half_life,
-            "tempo_half_life": self.tempo.half_life,
-            "tempo_ridge": self.tempo.ridge,
-            "minutes": self.minutes,
-        } | (
-            {}
-            if isinstance(self.projection, ActualMinutes)
-            else {
-                "minutes_half_life": self.projection.half_life,
-                "start_bonus": self.projection.start_bonus,
+        return (
+            {
+                "half_life": self.half_life,
+                "ridge": self.ridge,
+                "season_ridge": self.season_ridge,
+                "level_half_life": self.level_half_life,
+                "prior_weight": self.prior_weight,
+                "box_half_life": self.box_half_life,
+                "tempo_half_life": self.tempo.half_life,
+                "tempo_ridge": self.tempo.ridge,
+                "minutes": self.minutes,
             }
+            | (
+                # only when false, so calendar-day runs from before #43
+                # keep their ids
+                {} if self.offseason else {"offseason": False}
+            )
+            | (
+                {}
+                if not isinstance(self.prior, BoxPrior) or self.prior.offseason
+                else {"box_offseason": False}
+            )
+            | (
+                {}
+                if isinstance(self.projection, ActualMinutes)
+                else {
+                    "minutes_half_life": self.projection.half_life,
+                    "start_bonus": self.projection.start_bonus,
+                }
+            )
         )
 
     def fit(self, history: History) -> None:
         self.projection.fit(history)
-        rows, seasons, age = lineups(history, max(self.half_life, self.level_half_life))
+        rows, seasons, age, _ = lineups(
+            history, max(self.half_life, self.level_half_life), offseason=self.offseason
+        )
         offense = defense = None
         if self.prior_weight:
             self.prior.fit(history, lambda: self.target(history))
@@ -198,7 +229,7 @@ class PlayerRatings:
         box-score prior is fit to
         """
         where = "true" if history.season is None else f"season < {history.season}"
-        rows, seasons, _ = lineups(history, 1e12, where)
+        rows, seasons, _, _ = lineups(history, 1e12, where)
         return rapm.fit(
             rows, TARGET_RIDGE, penalties(seasons, self.season_ridge)
         ), seasons

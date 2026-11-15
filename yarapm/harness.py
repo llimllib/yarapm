@@ -56,6 +56,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
+from itertools import pairwise
 from pathlib import Path
 from typing import Any, NamedTuple, Protocol
 
@@ -137,6 +138,41 @@ class History:
         return self.con.sql(
             f"SELECT * FROM {table} WHERE game_date < DATE '{self.cutoff}'"
         )
+
+    def offseasons(self) -> list[tuple[date, int]]:
+        """
+        The breaks between seasons before the cutoff: (a season's last game
+        day, the days after it until the next season's first game day, less
+        one), counting a break the cutoff falls in up to the cutoff
+        """
+        ends = sorted(
+            self.results.aggregate(
+                "season, min(game_date), max(game_date)", "season"
+            ).fetchall()
+        )
+        breaks = [
+            (last, (first - last).days - 1)
+            for (_, _, last), (_, first, _) in pairwise(ends)
+        ]
+        if ends and self.season is not None and self.season > ends[-1][0]:
+            last = ends[-1][2]
+            breaks.append((last, (self.cutoff - last).days - 1))
+        return [(d, n) for d, n in breaks if n > 0]
+
+    def age(self, offseason: bool = True) -> str:
+        """
+        SQL for a row's age in days at the cutoff, from its `game_date`:
+        calendar days, or with `offseason` false, without the breaks
+        between seasons
+        """
+        age = f"date_diff('day', game_date, DATE '{self.cutoff}')"
+        if offseason:
+            return age
+        skipped = " + ".join(
+            f"CASE WHEN game_date <= DATE '{d}' THEN {n} ELSE 0 END"
+            for d, n in self.offseasons()
+        )
+        return f"({age} - ({skipped or 0}))"
 
     @property
     def results(self) -> duckdb.DuckDBPyRelation:

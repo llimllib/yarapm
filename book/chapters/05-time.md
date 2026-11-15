@@ -16,8 +16,9 @@ over time: the league itself.
 ## Exponential decay
 
 ::: {.definition #def:decay title="Decay weights"}
-On a fit day $t$, a segment played on day $t_s < t$ has *age* $a_s = t -
-t_s$ days, and its weight in @eq:ridge is multiplied by
+On a fit day $t$, a segment played on day $t_s < t$ has *age* $a_s$: the
+days from $t_s$ to $t$, not counting the breaks between seasons. Its
+weight in @eq:ridge is multiplied by
 $$
 w_s = 2^{-a_s / h} ,
 $$ {#eq:decay}
@@ -25,15 +26,21 @@ where $h$ is the *half life*, in days. Segments older than $8h$, whose
 weights are below $1/256$, are left out.
 :::
 
+A break runs from a season's last game, the end of the Finals, to the
+next season's first, usually about 128 days. Leaving it out means the
+clock only runs while games are played, so a season, from opening night
+to the Finals, is about 237 days long.
+
 So @eq:ridge becomes $\sum_s w_s n_s (r_s - x_s^\top\beta)^2$ plus the
-penalty, and a possession from a year ago counts half as much as one from
-last night. yarapm uses $h = 365$ days: last season counts about half,
-the one before a quarter. @fig:decay shows the weights.
+penalty. yarapm uses $h = 240$ days, about one season: a game from a
+season ago counts half as much as one from last night, and one from two
+seasons ago a quarter. @fig:decay shows the weights.
 
 ![(a) The weight of a game in the ratings, by its age: it halves every
-365 days, and games over eight years old are dropped. (b) The weight of a
-game in the league's level (@sec:level), which halves every
-week.](figures/decay.svg){#fig:decay}
+240 days of the season, about a season, and games over eight seasons old
+are dropped. (b) The weight of a game in the league's level
+(@sec:level), which halves every week of calendar
+time.](figures/decay.svg){#fig:decay}
 
 Why exponential, and not, say, the last two seasons equally? Two reasons.
 The first is that it has no edge: a game doesn't go from counting fully
@@ -57,12 +64,12 @@ compared with them, and with the penalty. That makes the day-to-day
 change in the ratings small and smooth, which is what makes the warm
 starts of @sec:cg work.
 
-How much data does a half life of a year amount to? Integrating the
+How much data does a half life of a season amount to? Integrating the
 weights,
 $$
 \int_0^{8h} 2^{-a/h}\, da = \frac{h}{\ln 2}\left(1 - 2^{-8}\right) \approx 1.44\,h ,
 $$
-so with $h = 365$ the fit has the weight of about 525 days of games at
+so with $h = 240$ the fit has the weight of about 345 days of games at
 full strength: roughly a season and a half, spread over eight. For a
 regular who plays 5,000 possessions a season, that's about 7,000
 possessions of weight, against a penalty of 3,000 (@exr:effective).
@@ -75,7 +82,19 @@ days, 13.717 with 365, 13.706 with 730 and 13.715 with 1,460. Again the
 minimum is broad. A half life of half a season is clearly too short,
 throwing away data the model needs, and anything from one to four years
 is about the same. With the box-score prior, 365 days did slightly better
-than 730, and it's the default.
+than 730.
+
+Those half lives were in calendar days, and they had a side effect. The
+summer between seasons is four months long, so on opening night every
+game counted about 20% less than it had at the Finals, while the penalty
+pulling each player toward their prior stayed the same. Every rating was
+pulled toward its prior without a game being played, and most for
+players with little data: Day'Ron Sharpe's rating fell by 0.4 to 0.5
+points over each of the last two summers. Counting only days in the
+season, with a half life of 240 days to keep about the same memory,
+predicted 2021–2024 just as well (a daily margin RMSE of 13.570, against
+13.568 with 365 calendar days), and the summer drop is gone. That's the
+default.
 :::
 
 ## The league's level {#sec:level}
@@ -130,12 +149,14 @@ level on opening night is essentially the level of the last few weeks
 of the previous season, with the playoff term taken out.
 
 ::: code
-[`decay()`](code:yarapm/fit.py#L6) is one line. The cutoff at eight half
+[`decay()`](code:yarapm/fit.py#L6) is one line. The ages, without the
+breaks between seasons, come from
+[`History.age()`](code:yarapm/harness.py#L162). The cutoff at eight half
 lives is applied in SQL, before any rows are read
-([`lineups()`](code:yarapm/players.py#L69)), so a fit reads only the
-segments that still matter: eight years of them, about 570,000 rows. The
+([`lineups()`](code:yarapm/players.py#L81)), so a fit reads only the
+segments that still matter: eight seasons of them, about 570,000 rows. The
 level is computed right after the ratings, in
-[`PlayerRatings.fit`](code:yarapm/players.py#L178), from the same rows
+[`PlayerRatings.fit`](code:yarapm/players.py#L209), from the same rows
 reweighted with the seven-day half life. Because @prop:memoryless makes
 a day's change in the weights a single factor, yesterday's ratings are a
 good starting point for today's solve, which is why each day's fit is
@@ -147,7 +168,8 @@ warm-started from the last.
 ::: {.exercise #exr:effective}
 A player has played 5,000 offensive possessions in each of the last
 eight seasons, spread evenly through each one. Approximately what is the
-total decayed weight of their possessions with $h = 365$? By
+total decayed weight of their possessions with $h = 240$, if a season is
+240 days long? By
 @thm:shrinkage, what share of their rating comes from the data rather
 than the prior? What if they're in their second season?
 :::

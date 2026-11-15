@@ -79,9 +79,15 @@ class Box:
     totals: dict[str, np.ndarray]
 
 
-def box_totals(history: History, half_life: float, where: str = "true") -> Box:
-    """Totals per player over the games matching `where`, older ones weighted less"""
-    w = f"0.5 ** (date_diff('day', game_date, DATE '{history.cutoff}') / {half_life})"
+def box_totals(
+    history: History, half_life: float, where: str = "true", offseason: bool = True
+) -> Box:
+    """
+    Totals per player over the games matching `where`, older ones weighted
+    less: by calendar days, or with `offseason` false, without the breaks
+    between seasons
+    """
+    w = f"0.5 ** ({history.age(offseason)} / {half_life})"
     sums = ", ".join(
         f"sum({w} * ({expr}))::DOUBLE AS {name}"
         for name, expr in {
@@ -199,8 +205,9 @@ class BoxPrior:
     computes everyone's prior as of the cutoff; `prior(players)` gives it
     """
 
-    def __init__(self, half_life: float = 365):
+    def __init__(self, half_life: float = 365, offseason: bool = True):
         self.half_life = half_life
+        self.offseason = offseason
         self.season: int | None = None
         self.box: Formula | None = None
         self.rookie: Formula | None = None
@@ -221,7 +228,7 @@ class BoxPrior:
             self.season = history.season
         assert self.box is not None and self.rookie is not None
 
-        box = box_totals(history, self.half_life)
+        box = box_totals(history, self.half_life, offseason=self.offseason)
         offense, defense = self.box.predict(box_features(box, self.bio))
         rookie_o, rookie_d = self.rookie.predict(self.bio.features(box.players))
         share = box.poss / (box.poss + ROOKIE_POSSESSIONS)

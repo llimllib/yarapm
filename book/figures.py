@@ -751,28 +751,32 @@ def valley() -> Svg:
 
 @figure("decay")
 def decay_weights() -> Svg:
-    """The weight of a game by its age: ratings (365 days) and the league level (7 days)"""
+    """
+    The weight of a game by its age: ratings (240 days of the season, about
+    one season) and the league level (7 days)
+    """
+    h = 240
     s = Svg(
         640,
         230,
-        "Two decay curves: a game's weight halves every year for the ratings and every week for the league's level",
+        "Two decay curves: a game's weight halves every season for the ratings and every week for the league's level",
     )
-    a = Axes(s, 60, 22, 300, 150, (0, 8 * 365), (0, 1))
+    a = Axes(s, 60, 22, 300, 150, (0, 8 * h), (0, 1))
     a.frame(
-        [0, 365, 730, 1095, 1460, 1825, 2190, 2555, 2920],
+        [k * h for k in range(9)],
         [0, 0.25, 0.5, 0.75, 1],
-        "age of the game, years",
+        "age of the game, seasons (240 days)",
         "weight",
-        xfmt=lambda v: f"{v / 365:.0f}",
+        xfmt=lambda v: f"{v / h:.0f}",
         yfmt=lambda v: f"{v:g}",
     )
-    xs = list(range(0, 8 * 365 + 1, 10))
-    a.line(xs, [0.5 ** (x / 365) for x in xs])
-    for yr in range(1, 8):
-        s.circle(a.px(yr * 365), a.py(0.5**yr), 2.2)
-    s.text(a.px(365) + 6, a.py(0.5) - 6, "½ after a year", size=10.5, italic=True)
+    xs = list(range(0, 8 * h + 1, 10))
+    a.line(xs, [0.5 ** (x / h) for x in xs])
+    for k in range(1, 8):
+        s.circle(a.px(k * h), a.py(0.5**k), 2.2)
+    s.text(a.px(h) + 6, a.py(0.5) - 6, "½ after a season", size=10.5, italic=True)
     s.text(
-        360, 14, "(a) ratings: half life 365 days", italic=True, anchor="end", size=12
+        360, 14, "(a) ratings: half life 240 days", italic=True, anchor="end", size=12
     )
     b = Axes(s, 410, 22, 210, 150, (0, 56), (0, 1))
     b.frame(
@@ -785,8 +789,8 @@ def decay_weights() -> Svg:
     xs = [x / 2 for x in range(113)]
     b.line(xs, [0.5 ** (x / 7) for x in xs])
     s.text(620, 14, "(b) league level: 7 days", italic=True, anchor="end", size=12)
-    eff = 365 / math.log(2) * (1 - 0.5**8)
-    print(f"decay: effective length of the 365-day window {eff:.0f} days")
+    eff = h / math.log(2) * (1 - 0.5**8)
+    print(f"decay: effective length of the {h}-day window {eff:.0f} days")
     return s
 
 

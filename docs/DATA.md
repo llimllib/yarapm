@@ -68,8 +68,11 @@ its last game (its final ratings, with the Finals). Keyed by `season`,
 `as_of_date` and `player_id`. A day's ratings use the games before it, so
 they're what a prediction on that day would use. Players are those on a
 team's roster as of the day (see `minutes`) or with possessions this
-season. There are no rows for the offseason: a player's ratings don't move
-without games, until a new season's prior.
+season. There are no rows for the offseason. Games age only during a
+season (the days between seasons don't count), so the summer doesn't pull
+ratings toward their priors. A new season's first day can still move
+them: its box-score formula is refit with the season just finished, and
+the day's ratings are centered on new lineups (below).
 
 The model's ratings have no fixed zero: adding a constant to every
 player's offense (or defense) changes no prediction, since the league

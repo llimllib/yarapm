@@ -17,8 +17,9 @@ much faster than plus-minus does. This chapter turns them into a prior.
 Each player's box scores are turned into rates per 100 of their
 possessions on the floor: points, two- and three-point attempts, free
 throw attempts, assists, turnovers, offensive and defensive rebounds,
-steals, blocks and fouls. Older games count less, with the same one-year
-half life as the ratings.
+steals, blocks and fouls. Older games count less, with a half life of
+365 calendar days, about the same memory as the ratings' 240 days of the
+season (@ch:time).
 
 A rate from a few games is noisy, and how noisy depends on the stat. A
 player's rebounding rate settles in a few hundred possessions, but steals
@@ -159,11 +160,11 @@ $-0.8$ and finished at $+4.1$. The prior was a sensible starting point
 for both, and the games moved each where they belonged.
 
 ::: code
-The prior is [`BoxPrior`](code:yarapm/prior.py#L196) in
-`yarapm/prior.py`. Its [`train`](code:yarapm/prior.py#L234) method fits
+The prior is [`BoxPrior`](code:yarapm/prior.py#L202) in
+`yarapm/prior.py`. Its [`train`](code:yarapm/prior.py#L241) method fits
 the two formulas when the season changes, from
-[`PlayerRatings.target`](code:yarapm/players.py#L195), the plain RAPM fit
-over every earlier season. [`box_features`](code:yarapm/prior.py#L136)
+[`PlayerRatings.target`](code:yarapm/players.py#L226), the plain RAPM fit
+over every earlier season. [`box_features`](code:yarapm/prior.py#L142)
 computes the eighteen inputs, with the steadying constants in
 [`RATES`](code:yarapm/prior.py#L42). Box scores go back to 2010, two
 years further than play-by-play, so the rookie formula has more seasons

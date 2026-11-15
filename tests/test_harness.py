@@ -167,3 +167,36 @@ def test_score_lines():
     assert metrics["early"]["line_log_loss"] == pytest.approx(0.0164, abs=1e-4)
     assert metrics["playoffs"]["line_games"] == 0
     assert metrics["playoffs"]["line_margin_rmse"] is None
+
+
+def test_age_without_offseason():
+    con = duckdb.connect()
+    # 2021 plays Jan 1-10, 2022 from Jun 1
+    results(con, season(2021, date(2021, 1, 1), 10) + season(2022, date(2021, 6, 1), 5))
+
+    def ages(history, offseason):
+        return dict(
+            history.results.select(
+                f"game_date, {history.age(offseason)} AS age"
+            ).fetchall()
+        )
+
+    # in the offseason: the break so far is skipped, as if 2021 ended yesterday
+    h = History(con, date(2021, 3, 1), 2022)
+    assert h.offseasons() == [(date(2021, 1, 10), 49)]
+    assert ages(h, True)[date(2021, 1, 10)] == 50
+    assert ages(h, False)[date(2021, 1, 10)] == 1
+    assert ages(h, False)[date(2021, 1, 1)] == 10
+
+    # in 2022: the whole break is skipped, in-season days still count
+    h = History(con, date(2021, 6, 4), 2022)
+    a = ages(h, False)
+    assert a[date(2021, 6, 3)] == 1
+    assert a[date(2021, 6, 1)] == 3
+    assert a[date(2021, 1, 10)] == 4
+    assert ages(h, True)[date(2021, 1, 10)] == 145
+
+    # within the first season there's no break
+    h = History(con, date(2021, 1, 5), 2021)
+    assert h.offseasons() == []
+    assert ages(h, False) == ages(h, True)

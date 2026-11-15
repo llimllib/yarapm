@@ -23,7 +23,7 @@ Commands (tools come from `mise.toml`):
 - `yarapm/tempo.py`, `yarapm/baselines.py`: adjusted tempo, and the `home` and `team` models
 - `yarapm/rapm.py`: the sparse ridge RAPM solver (#6), pulling each player toward a prior
 - `yarapm/prior.py`: the box-score prior (#7) and OpenRAPM as a prior (#9)
-- `yarapm/players.py`: the `rapm` model (#8), ratings × minutes + tempo + home court, and `openrapm` (#9), OpenRAPM's ratings through the same step
+- `yarapm/players.py`: the `rapm` model (#8), ratings × minutes + tempo + home court, and `openrapm` (#9), OpenRAPM's ratings through the same step. The ratings age games in days of the season, skipping the breaks between them (`History.age()`, #43), so a summer doesn't move them
 - `yarapm/minutes.py`: minutes for those models, `--set minutes=actual|known|unknown`. `actual` is the minutes played (`History.actual_minutes`, a leak that isolates rating error); `known` projects minutes given who played (`History.active`, a leak standing in for injury reports, #10), the default; `unknown` projects who plays too (#11). Projected minutes are scored as `minutes_mae`
 - `yarapm/predict.py`: predictions for games not yet played (#26), from `nba.schedule` (`yarapm.games.schedule_query`). The live models are `rapm` with unknown availability and `team`; win probability uses a fixed spread, each model's margin RMSE on the tuning seasons (`SIGMA`). A fresh fit for a day matches the harness's daily prediction for it
 - `yarapm/strength.py`: team ratings at full strength and today (#31), from the player model's ratings and minutes; `publish` writes them as `team_ratings_daily` and `team_players_daily`

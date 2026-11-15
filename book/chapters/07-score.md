@@ -198,8 +198,8 @@ open experiments in the project.
 
 ::: code
 The expected score, @eq:expected-score, is
-[`PlayerRatings.predict`](code:yarapm/players.py#L229), and team
-strength is [`strength`](code:yarapm/players.py#L214), which takes
+[`PlayerRatings.predict`](code:yarapm/players.py#L260), and team
+strength is [`strength`](code:yarapm/players.py#L245), which takes
 each team's projected minutes and normalizes them, so it works with any
 total. Minutes are [`ProjectedMinutes`](code:yarapm/minutes.py#L97):
 minutes when playing are one SQL query with a window function numbering

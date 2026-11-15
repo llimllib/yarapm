@@ -194,7 +194,7 @@ so every query reads `nba.<table>`, and what yarapm builds goes under
 `out/`, one Parquet file per season.
 
 The no-peeking rule is enforced by a class: a model is fit on a
-[`History`](code:yarapm/harness.py#L114), whose every table is filtered to
+[`History`](code:yarapm/harness.py#L122), whose every table is filtered to
 games before the day being predicted, and that's all it can see. Which
 games count at all (regular season, play-in, playoffs and the Cup final,
 but not preseason or the All-Star game) is decided in

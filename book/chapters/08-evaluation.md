@@ -177,15 +177,15 @@ record will be the real answer to this chapter's question; as this is
 written, it has scored a handful of games.
 
 ::: code
-The harness is [`yarapm/harness.py`](code:yarapm/harness.py#L231): for
+The harness is [`yarapm/harness.py`](code:yarapm/harness.py#L274): for
 each game day it fits the model on a `History` cut at that day and
 predicts the day's games, then writes the predictions and
-[`score()`](code:yarapm/harness.py#L413)'s metrics to Parquet, tagged
+[`score()`](code:yarapm/harness.py#L511)'s metrics to Parquet, tagged
 with a run id hashed from the model's settings. A daily run over four
 seasons takes about seven minutes; for tuning, a weekly cadence, fitting
 on each week's first game day, is fast enough to sweep grids and close
 enough to the daily results to rank settings. The phases come from
-[`phases()`](code:yarapm/harness.py#L342), which needs each season's
+[`phases()`](code:yarapm/harness.py#L387), which needs each season's
 trade deadline. The live log is `prediction_log` in the published data,
 scored into `live_metrics`.
 :::
