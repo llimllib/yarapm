@@ -43,13 +43,13 @@ each season. Gaps are offseasons, when there are no
 games.](figures/george.svg){#fig:george}
 
 @fig:george follows Paul George through sixteen seasons and five teams.
-In Indiana, George's rating ended each season between $+3.3$ and $+5.0$,
+In Indiana, George's rating ended each season between $+3.4$ and $+4.9$,
 with defense rated higher than offense in all but the last. After the
-trade to Oklahoma City it ended 2018 at $+3.0$ and 2019 at $+6.3$. Through
-five seasons with the Clippers it stayed between $+4.9$ and $+6.3$, most
+trade to Oklahoma City it ended 2018 at $+3.0$ and 2019 at $+6.1$. Through
+five seasons with the Clippers it stayed between $+4.7$ and $+6.1$, most
 of it on offense. In Philadelphia, with 41 games played in 2025 and
-49 in 2026, it fell to $+2.9$ and then $+2.5$, and this season, in
-Boston, it started near $+2.4$.
+49 in 2026, it fell to $+2.8$ and then $+2.4$, and this season, in
+Boston, it started near $+2.3$.
 
 The figure shows the model's habits as well as the player's. Within a
 season the rating moves in small steps, a game's worth of evidence at a
@@ -57,8 +57,8 @@ time, and most at the start, when each game is a larger share of what's
 new. Between seasons it can jump, because the box-score formula is refit
 on opening night (@ch:prior). And the defensive line is the flatter one,
 which is true of the ratings generally: among 2026's regulars, the
-published defensive ratings have a standard deviation of 1.6 against
-offense's 1.9. Defense leaves less of a trace in the box score and in the
+published defensive ratings have a standard deviation of 1.5 against
+offense's 1.8. Defense leaves less of a trace in the box score and in the
 scoring margin, so the data moves defensive ratings less far from their
 priors.
 
@@ -84,9 +84,9 @@ missed.](figures/warriors.svg){#fig:warriors}
 
 At full strength the Warriors averaged $+5.9$ points per 100 possessions
 over the season, a good team. With the lineup expected each day they
-averaged $+3.3$, and the gap follows Curry's absences: on March 20, in
-the middle of Curry's longest stretch out, they were $+7.9$ at full strength
-and $+1.3$ as they would actually take the floor. A team rating fit to
+averaged $+3.2$, and the gap follows Curry's absences: on March 20, in
+the middle of Curry's longest stretch out, they were $+7.8$ at full strength
+and $+1.2$ as they would actually take the floor. A team rating fit to
 results, @ch:question's baseline, sees one number somewhere in between
 and can't tell which team is playing tonight.
 
