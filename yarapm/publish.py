@@ -3,7 +3,8 @@ The datasets we publish (#27), under the `yarapm/` prefix of the
 basketball-data bucket, with their own catalog:
 
     uv run python -m yarapm.publish build [--date 2026-11-05] [--no-segments]
-    uv run python -m yarapm.publish backfill [--season 2018 ...] [--force] [--no-segments]
+    uv run python -m yarapm.publish backfill [--season 2018 ...] [--force] [--jobs 4]
+        [--no-segments]
     uv run python -m yarapm.publish catalog [--url https://basketball-data.billmill.org]
     uv run python -m yarapm.publish current
     uv run python -m yarapm.publish verify [--url https://basketball-data.billmill.org]
@@ -63,7 +64,8 @@ the one before the season `build` writes. A season's days are its game
 days and the day after its last game, so its last ratings include the
 Finals. Seasons already built by this model version with every day are
 skipped, unless `--force` (for nba_data correcting old games, which the
-version doesn't see).
+version doesn't see). `--jobs` fits that many seasons at once, each in its
+own process.
 
 docs/DATA.md has the columns. Values are rounded (ratings, points and
 minutes to two decimals, probabilities to four): full-precision doubles
@@ -89,9 +91,12 @@ import json
 import os
 import subprocess
 import sys
+import time
 import urllib.request
 from collections.abc import Mapping
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import UTC, date, datetime, timedelta
+from multiprocessing import get_context
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -491,33 +496,42 @@ def backfill(
     root: Path = PUBLISH,
     sha: str = "unknown",
     force: bool = False,
+    jobs: int = 1,
 ) -> list[str]:
     """
     Fit and write the daily datasets for finished `seasons` into `root`:
     their missing days, or every day if they weren't built by this model
     version or `force`. Needs the tables `yarapm.harness.load` makes.
-    Returns the datasets written
+    Returns the datasets written.
+
+    With `jobs` above 1, that many seasons are fit at once, each in a
+    process of its own with its own connection: no season's fit uses
+    another's, only the source data, so they can be fit in any order
     """
     model = live_model()
     settings = json.dumps(model.settings, sort_keys=True)
     version = model_version(play_by_play_from(con))
     if seasons:
         check_mirror(root, seasons[-1])
-    for season in seasons:
-        fit = daily_tables(
-            con,
-            root,
-            season,
-            season_days(con, season),
-            sha,
-            settings,
-            version,
-            force=force,
-        )
-        validate(con, None)
-        for dataset in DAILY:
-            write(con, f"FROM {dataset}", dataset_path(root, dataset, season))
-        print(f"{season}: fit {fit} days")
+    args = (root, sha, settings, version, force)
+    if jobs > 1 and len(seasons) > 1:
+        # spawned, not forked: a fork would share the open connection
+        with ProcessPoolExecutor(
+            min(jobs, len(seasons)), mp_context=get_context("spawn")
+        ) as pool:
+            futures = {
+                pool.submit(backfill_season, None, season, *args): season
+                for season in seasons
+            }
+            for future in as_completed(futures):
+                fit, seconds = future.result()
+                print(
+                    f"{futures[future]}: fit {fit} days in {seconds:.0f}s", flush=True
+                )
+    else:
+        for season in seasons:
+            fit, seconds = backfill_season(con, season, *args)
+            print(f"{season}: fit {fit} days in {seconds:.0f}s", flush=True)
     if not seasons:
         return []
     about = {
@@ -528,6 +542,40 @@ def backfill(
     }
     write_metadata(root, dict.fromkeys(DAILY, about), {})
     return list(DAILY)
+
+
+def backfill_season(
+    con: duckdb.DuckDBPyConnection | None,
+    season: int,
+    root: Path,
+    sha: str,
+    settings: str,
+    version: str,
+    force: bool,
+) -> tuple[int, float]:
+    """
+    Fit, check and write a season's daily datasets for `backfill`, on `con`,
+    or with none, on a new connection with `yarapm.harness.load`'s tables.
+    Returns the number of days fit and the seconds it took
+    """
+    start = time.monotonic()
+    if con is None:
+        con = connect()
+        load(con)
+    fit = daily_tables(
+        con,
+        root,
+        season,
+        season_days(con, season),
+        sha,
+        settings,
+        version,
+        force=force,
+    )
+    validate(con, None)
+    for dataset in DAILY:
+        write(con, f"FROM {dataset}", dataset_path(root, dataset, season))
+    return fit, time.monotonic() - start
 
 
 def check_mirror(root: Path, season: int) -> None:
@@ -1224,6 +1272,12 @@ def main(argv: list[str] | None = None) -> None:
         help="refit every day, even of seasons already built by this model version",
     )
     f.add_argument(
+        "--jobs",
+        type=int,
+        default=1,
+        help="seasons to fit at once, each in its own process",
+    )
+    f.add_argument(
         "--no-segments",
         action="store_true",
         help="use the segments already in out/ instead of rebuilding them",
@@ -1263,7 +1317,7 @@ def main(argv: list[str] | None = None) -> None:
         if not args.no_segments:
             segments.main([])
         load(con)
-        for dataset in backfill(con, todo, args.root, commit(), args.force):
+        for dataset in backfill(con, todo, args.root, commit(), args.force, args.jobs):
             print(f"wrote {dataset}")
         return
     games = scheduled(con, day, 366)

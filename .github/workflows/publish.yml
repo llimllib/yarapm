@@ -156,8 +156,11 @@ jobs:
             }
 
   # the finished seasons' daily datasets, rebuilt when the model version
-  # changes (#35): about 20 minutes for every season, so a job of its own
-  # after the predictions are published. Seasons built by this version are
+  # changes (#35): over an hour for every season one at a time, so a job of
+  # its own after the predictions are published, fitting three seasons at
+  # once (--jobs 3). Not four, a runner's cores: a season's first fit
+  # peaks at up to 4GB (the box-score prior's RAPM over every earlier
+  # season), and four at once could exhaust a runner's 16GB. Seasons built by this version are
   # skipped, so it's usually done in a minute. Only after a build: a season
   # goes stale when the model version changes, which `current` sees, or when
   # it finishes, which comes with new data
@@ -181,7 +184,7 @@ jobs:
         id: backfill
         run: |
           set -o pipefail
-          uv run python -m yarapm.publish backfill ${{ inputs.force && '--force' || '' }} | tee backfill.log
+          uv run python -m yarapm.publish backfill --jobs 3 ${{ inputs.force && '--force' || '' }} | tee backfill.log
           if grep -q '^wrote ' backfill.log; then
             echo "wrote=true" >> "$GITHUB_OUTPUT"
           fi
