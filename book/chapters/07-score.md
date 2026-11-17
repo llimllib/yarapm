@@ -76,9 +76,10 @@ barely sensitive to the choice: within 0.03 points over the whole grid.
 
 ## Who plays
 
-The harder question is who will play at all. The NBA publishes injury
-reports, but nba_data doesn't have them yet, so the model guesses from
-each player's recent pattern.
+The harder question is who will play at all. nba_data saves ESPN's
+injury list before each game, but only since November 2026, so there
+are no past seasons to fit or test it on. For now the model guesses
+from each player's recent pattern.
 
 ::: {.definition #def:availability title="Chance of playing"}
 A team's *roster* is the players who played in one of its last 10 games
