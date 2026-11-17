@@ -48,7 +48,10 @@ row of a season's files comes from one model version (`model_version`, a
 hash of the code, the locked dependencies and the first season of
 play-by-play). A build keeps the season's days
 if its files were built by this version, fitting only the missing ones and
-the build's day, and refits every day if not. The logs are the live
+the build's day, and refits every day if not. The chance of playing uses
+ESPN's injury list (#45): the build's predictions and its day's lineups
+the latest fetched before the build, and a day fit for the daily datasets
+the latest fetched before its first tip-off. The logs are the live
 record (#29) and keep what earlier builds wrote, whatever built them.
 Either way a build starts from the bucket's files, and refuses to run if
 metadata.json lists a season of a daily dataset or log that the mirror
@@ -381,11 +384,12 @@ def build(
     settings = json.dumps(model.settings, sort_keys=True)
     version = model_version(play_by_play_from(con))
 
-    forecasts = forecast(con, model, games, day)
+    # the injury list is the latest fetched before the build (#45)
+    forecasts = forecast(con, model, games, day, now)
     assert isinstance(model.projection, ProjectedMinutes)
     minutes = model.projection.predict([g for g, _ in games])
     chances = {
-        team: model.projection.playing_chances(team)
+        (g.game_id, team): model.projection.playing_chances(team, g)
         for g, _ in games
         for team in (g.team_id, g.opp_team_id)
     }
@@ -398,7 +402,7 @@ def build(
         sha,
         settings,
         version,
-        {day: day_rows(model, History(con, day, season))},
+        {day: day_rows(model, History(con, day, season, now))},
     )
 
     team = TeamRatings()
@@ -598,12 +602,15 @@ def predictions_table(
 def minutes_table(
     con: duckdb.DuckDBPyConnection,
     minutes: dict[tuple[str, str], dict[str, float]],
-    chances: dict[str, dict[str, float]],
+    chances: dict[tuple[str, str], dict[str, float]],
     day: date,
 ) -> None:
-    """Temp table `minutes`: each player's projected minutes and chance of playing"""
+    """
+    Temp table `minutes`: each player's projected minutes and chance of
+    playing (`chances`, by game and team)
+    """
     rows = [
-        (game_id, team, player, m, chances[team].get(player, 0.0))
+        (game_id, team, player, m, chances[game_id, team].get(player, 0.0))
         for (game_id, team), players in minutes.items()
         for player, m in players.items()
     ]

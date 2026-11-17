@@ -26,6 +26,15 @@ of the team's last ROSTER_GAMES games and haven't played for another team
 since. Players who change teams in the offseason or in a trade aren't on
 their new team's roster until they've played for it.
 
+The injury list (#45): a player on the roster who's on ESPN's injury list
+(`History.injuries`, from November 12, 2026) gets a chance of playing from
+their listed status instead (`injury_chance`), in their team's next game
+after the list was fetched and its later games before the entry's return
+date. In the team's other games, the pattern's chance comes back: the list
+says nothing about next week. With no list, as for every season before
+2027, nothing changes. Coming off the list doesn't add a player to the
+roster: one back from a long absence isn't on it.
+
 A team's minutes are scaled to 240, with no player above CAP (the excess
 goes to the others in proportion). With unknown availability, each player
 gets their chance of playing × their minutes when playing, then scaled.
@@ -36,8 +45,9 @@ start bonuses of 0-10. Margin RMSE moved by 0.03 at most over the grid.
 """
 
 from collections import defaultdict
+from datetime import date
 
-from yarapm.harness import Game, History
+from yarapm.harness import Game, History, Injury, InjuryList
 
 TEAM_MINUTES = 240
 CAP = 42
@@ -48,6 +58,14 @@ HALF_LIVES = 8
 LOOKBACK_DAYS = 365
 # seasons of history the availability table is fit on
 AVAILABILITY_SEASONS = 3
+# the chance a player on ESPN's injury list plays, by status and fantasy
+# status. Set by hand, not fit, from the last list before tip-off for the
+# games of November 13-15, 2026 (#45): of 145 listed `out` with `OUT` or
+# `OFS` and 2 suspended, none played; 1 of 3 `out` with `GTD` did, and 7 of
+# 11 `day_to_day`. Refit them, with availability()'s half-game prior toward
+# even, once the season has a few weeks of lists
+INJURY_CHANCES = {"suspension": 0.0, "out": 0.0, "day_to_day": 0.7}
+OUT_GTD_CHANCE = 0.5
 
 Minutes = dict[tuple[str, str], dict[str, float]]
 
@@ -107,6 +125,7 @@ class ProjectedMinutes:
         self.chances: dict[tuple[int, int], float] = {}
         self.chances_season: int | None = None
         self.rosters: dict[str, dict[str, tuple[int, int]]] = {}
+        self.injuries: InjuryList | None = None
 
     def fit(self, history: History) -> None:
         self.history = history
@@ -116,6 +135,7 @@ class ProjectedMinutes:
                 self.chances = availability(history)
                 self.chances_season = history.season
             self.rosters = rosters(history)
+            self.injuries = history.injuries()
 
     def when_playing(self, history: History) -> dict[str, float]:
         """Each player's projected minutes if they play"""
@@ -160,7 +180,7 @@ class ProjectedMinutes:
                 out[g.game_id, team] = allocate(
                     {
                         p: chance * self.minutes(p)
-                        for p, chance in self.playing_chances(team).items()
+                        for p, chance in self.playing_chances(team, g).items()
                     }
                 )
         return out
@@ -168,9 +188,52 @@ class ProjectedMinutes:
     def chance(self, since: int, played: int) -> float:
         return self.chances.get((since, played), 0.0)
 
-    def playing_chances(self, team: str) -> dict[str, float]:
-        """With unknown availability, the chance each player on a roster plays"""
-        return {p: self.chance(*spot) for p, spot in self.rosters.get(team, {}).items()}
+    def playing_chances(self, team: str, game: Game | None = None) -> dict[str, float]:
+        """
+        With unknown availability, the chance each player on a roster plays
+        in `game`, or with no game, in the team's next one
+        """
+        chances = {
+            p: self.chance(*spot) for p, spot in self.rosters.get(team, {}).items()
+        }
+        if self.injuries is None:
+            return chances
+        for p in chances:
+            injury = self.injuries.players.get(p)
+            if injury is None or not self.listed_for(team, injury, game):
+                continue
+            chance = injury_chance(injury)
+            if chance is not None:
+                chances[p] = chance
+        return chances
+
+    def listed_for(self, team: str, injury: Injury, game: Game | None) -> bool:
+        """
+        Whether an injury list entry covers `game`, or with no game, the
+        team's next one: the team's next game after the list was fetched,
+        and its games before the entry's return date
+        """
+        assert self.injuries is not None
+        cutoff = self.history.cutoff
+        next_game = self.injuries.next_games.get(team)
+        day: date = cutoff if game is None else game.game_date
+        if game is None:
+            # the next game after the fetch, unless it's already been played
+            if next_game is not None and next_game[1] >= cutoff:
+                return True
+        elif next_game is not None and next_game[0] == game.game_id:
+            return True
+        return injury.return_date is not None and day < injury.return_date
+
+
+def injury_chance(injury: Injury) -> float | None:
+    """
+    The chance a player on ESPN's injury list plays (INJURY_CHANCES), or
+    None for a status we don't know
+    """
+    if injury.status == "out" and injury.fantasy_status == "GTD":
+        return OUT_GTD_CHANCE
+    return INJURY_CHANCES.get(injury.status)
 
 
 def team_games(history: History) -> str:

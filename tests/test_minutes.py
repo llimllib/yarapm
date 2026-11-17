@@ -1,10 +1,15 @@
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import duckdb
 import pytest
 
 from yarapm.harness import Game, History
 from yarapm.minutes import CAP, ProjectedMinutes, allocate, availability, rosters
+
+
+def utc(*args: int) -> datetime:
+    """A time in UTC without a zone, as `History` has them"""
+    return datetime(*args, tzinfo=UTC).replace(tzinfo=None)
 
 
 def test_allocate_scales_to_240_and_caps():
@@ -124,3 +129,103 @@ def test_availability_ignores_this_seasons_games():
     c = team(["c1", "c2", "c3", "c4", "c5"], ["c6", "c7", "c8"])
     tables(con, [("A", "B", {"A": c, "B": B})] * 12, season=2024)
     assert availability(History(con, date(2024, 1, 1), 2024)) == before
+
+
+def schedule_and_injuries(con, injuries):
+    """
+    A's next three games after five, from 2023-11-06, in nba.schedule
+    (as `load` makes it), and ESPN's injury lists: (fetched_at, player,
+    status, fantasy_status, return_date)
+    """
+    con.execute("""CREATE OR REPLACE TEMP TABLE schedule AS
+        SELECT game_id, 2024 AS season, game_date, 'regular_season' AS game_type,
+            'A' AS team_id, 'B' AS opp_team_id, true AS home,
+            game_date + INTERVAL 24 HOUR AS start_time
+        FROM (VALUES ('x1', DATE '2023-11-06'), ('x2', DATE '2023-11-08'),
+            ('x3', DATE '2023-11-10')) v(game_id, game_date)""")
+    con.execute("""CREATE OR REPLACE TEMP TABLE injuries (season INTEGER,
+        fetched_at TIMESTAMP, team_id VARCHAR, player_id VARCHAR, status VARCHAR,
+        fantasy_status VARCHAR, return_date DATE)""")
+    con.executemany("INSERT INTO injuries VALUES (2024, ?, 'A', ?, ?, ?, ?)", injuries)
+
+
+SCHEDULED = [
+    Game(g, 2024, d, "regular_season", "A", "B", True)
+    for g, d in [
+        ("x1", date(2023, 11, 6)),
+        ("x2", date(2023, 11, 8)),
+        ("x3", date(2023, 11, 10)),
+    ]
+]
+
+
+def unknown(con, as_of=None):
+    """ProjectedMinutes with unknown availability, everyone at 0.9 to play"""
+    model = ProjectedMinutes("unknown", half_life=5, start_bonus=0)
+    model.chances, model.chances_season = {(0, 5): 0.9}, 2024
+    model.fit(History(con, date(2023, 11, 6), 2024, as_of))
+    return model
+
+
+def test_injury_list_sets_the_chance_of_playing():
+    con = duckdb.connect()
+    tables(con, [("A", "B", {"A": team(A_STARTERS, ["a6", "a7", "a8"]), "B": B})] * 5)
+    listed = utc(2023, 11, 6, 12)
+    schedule_and_injuries(
+        con,
+        [
+            (listed, "a1", "out", "OUT", date(2023, 11, 9)),
+            (listed, "a2", "out", "GTD", date(2023, 11, 7)),
+            (listed, "a3", "day_to_day", "GTD", None),
+            (listed, "a4", "suspension", "OUT", date(2023, 11, 7)),
+            # after the first tip-off on the cutoff day: not seen
+            (utc(2023, 11, 7, 1), "a5", "out", "OUT", date(2023, 12, 1)),
+        ],
+    )
+    model = unknown(con)
+    x1, x2, x3 = SCHEDULED
+    chances = {g.game_id: model.playing_chances("A", g) for g in SCHEDULED}
+    # the team's next game
+    assert {p: chances["x1"][p] for p in ["a1", "a2", "a3", "a4", "a5"]} == {
+        "a1": 0.0,
+        "a2": 0.5,
+        "a3": 0.7,
+        "a4": 0.0,
+        "a5": 0.9,
+    }
+    # with no game, the next one: the lineups in yarapm.strength
+    assert model.playing_chances("A") == chances["x1"]
+    # later games before the return date
+    assert chances["x2"]["a1"] == 0.0
+    assert chances["x2"]["a2"] == chances["x2"]["a3"] == 0.9
+    assert chances["x3"] == {p: 0.9 for p in chances["x3"]}
+
+    # a player listed out gets no minutes, and the rest share 240
+    minutes = model.predict(SCHEDULED)
+    assert minutes["x1", "A"]["a1"] == 0
+    assert minutes["x3", "A"]["a1"] > 0
+    assert sum(minutes["x1", "A"].values()) == pytest.approx(240)
+    assert minutes["x1", "B"] == minutes["x3", "B"]
+
+    # as of a later time: the later list, whose next game for A is x2
+    later = unknown(con, datetime(2023, 11, 7, 2, tzinfo=UTC))
+    assert later.playing_chances("A", x1)["a1"] == 0.9
+    assert later.playing_chances("A", x2)["a5"] == 0.0
+    assert later.playing_chances("A", x3)["a5"] == 0.0
+
+
+def test_no_injury_list_changes_nothing():
+    con = duckdb.connect()
+    tables(con, [("A", "B", {"A": team(A_STARTERS, ["a6", "a7", "a8"]), "B": B})] * 5)
+    # no lists loaded, as in the tests and for a History without `load`
+    before = unknown(con)
+    assert before.injuries is None
+    expected = before.predict(SCHEDULED)
+    assert expected["x1", "A"]["a1"] > 0
+    # loaded, but only fetched after the first tip-off
+    schedule_and_injuries(
+        con, [(utc(2023, 11, 7, 1), "a1", "out", "OUT", date(2023, 12, 1))]
+    )
+    after = unknown(con)
+    assert after.injuries is None
+    assert after.predict(SCHEDULED) == expected

@@ -14,7 +14,9 @@ schedule's.
 
 The live models are LIVE_MODELS: `rapm` with unknown availability (#11),
 since who plays in a future game isn't known, and the `team` baseline to
-compare it to (#29), each with its default settings otherwise.
+compare it to (#29), each with its default settings otherwise. `rapm`
+uses ESPN's injury list (#45) for the chance of playing: here the last
+one fetched before `--date`'s first tip-off (`History`).
 
 Win probability is P(margin > 0) for a normal centered on the predicted
 margin, as the harness scores it, but with a fixed spread: a live
@@ -26,7 +28,6 @@ import argparse
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 import duckdb
 from scipy.special import ndtr
@@ -35,10 +36,8 @@ from yarapm import segments
 from yarapm.baselines import TeamRatings
 from yarapm.catalog import OUT, connect
 from yarapm.games import schedule_query
-from yarapm.harness import Game, History, Model, Prediction, load
+from yarapm.harness import EASTERN, Game, History, Model, Prediction, load
 from yarapm.players import PlayerRatings
-
-EASTERN = ZoneInfo("America/New_York")
 
 # margin RMSE of each model's daily run on 2021-2024: rapm-93ea3652 (minutes
 # unknown) and team-2ac45b4a
@@ -72,17 +71,20 @@ def forecast(
     model: Model,
     games: list[tuple[Game, datetime | None]],
     cutoff: date,
+    as_of: datetime | None = None,
 ) -> list[Forecast]:
     """
     Fit `model` on the games before `cutoff`, in the games' season, and
-    predict them. Needs the tables `yarapm.harness.load` makes
+    predict them, with the injury list as of `as_of` (by default, the
+    cutoff day's first tip-off: `History`). Needs the tables
+    `yarapm.harness.load` makes
     """
     if not games:
         return []
     seasons = {g.season for g, _ in games}
     if len(seasons) > 1:
         raise ValueError(f"games from more than one season: {sorted(seasons)}")
-    model.fit(History(con, cutoff, seasons.pop()))
+    model.fit(History(con, cutoff, seasons.pop(), as_of))
     predicted = [Prediction(*p) for p in model.predict([g for g, _ in games])]
     if len(predicted) != len(games):
         raise ValueError(

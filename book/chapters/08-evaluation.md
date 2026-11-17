@@ -137,7 +137,7 @@ playoffs 14.53. The playoffs are where the model is weakest: it
 underrates home teams by 2.4 points of margin and overpredicts totals by
 1.4, both open questions in the project.
 
-## Keeping it honest
+## Keeping it honest {#sec:live}
 
 A model tuned on enough settings will find some that fit the past by
 luck. Three habits guard against fooling ourselves.

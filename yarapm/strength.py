@@ -6,9 +6,10 @@ model predicts with (`PlayerRatings.strength`), for two lineups:
     full   everyone plays: the 240 minutes go to the players with the
            most minutes when playing (`ProjectedMinutes.minutes`), each
            getting theirs, until they're used up (`fill`)
-    today  the lineup the predictions use: each player on the model's
-           roster at their chance of playing × their minutes when playing,
-           scaled to 240
+    today  the lineup the predictions use for the team's next game: each
+           player on the model's roster at their chance of playing (from
+           ESPN's injury list if they're on it, #45) × their minutes when
+           playing, scaled to 240
 
 The full-strength lineup is the players who've played for the team this
 season and not for another team since (`played_for`). The model's roster

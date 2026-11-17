@@ -59,6 +59,7 @@ from datetime import UTC, date, datetime, timedelta
 from itertools import pairwise
 from pathlib import Path
 from typing import Any, NamedTuple, Protocol
+from zoneinfo import ZoneInfo
 
 import duckdb
 import numpy as np
@@ -66,12 +67,14 @@ import pyarrow as pa
 from scipy.special import ndtr
 
 from yarapm.catalog import OUT, connect, read
-from yarapm.games import load_results
+from yarapm.games import load_results, schedule_query
 
 TUNING_SEASONS = (2021, 2022, 2023, 2024)
 HOLDOUT_SEASONS = (2025, 2026)
 
 EARLY_GAMES = 20
+
+EASTERN = ZoneInfo("America/New_York")
 
 TRADE_DEADLINES = {
     2010: date(2010, 2, 18),
@@ -119,20 +122,59 @@ class Prediction(NamedTuple):
     minutes: dict[str, float] | None = None
 
 
+class Injury(NamedTuple):
+    """A player's entry in ESPN's injury list"""
+
+    status: str  # out, day_to_day, suspension
+    fantasy_status: str | None  # OUT, GTD, OFS
+    return_date: date | None
+
+
+class InjuryList(NamedTuple):
+    """
+    ESPN's injury list as of one fetch: each listed player's entry, and each
+    team's next game after the fetch, (game_id, game_date)
+    """
+
+    fetched_at: datetime  # UTC, naive
+    players: dict[str, Injury]
+    next_games: dict[str, tuple[str, date]]
+
+
+def table_exists(con: duckdb.DuckDBPyConnection, name: str) -> bool:
+    """Whether temp table `name` has been made"""
+    return bool(
+        con.execute(
+            "SELECT count(*) FROM duckdb_tables() WHERE temporary AND table_name = ?",
+            [name],
+        ).fetchall()[0][0]
+    )
+
+
 class History:
     """
     What a model may use when it's fit: everything before `cutoff`, in
     `season`. Every table a model reads goes through here, filtered on
-    `game_date`
+    `game_date`.
+
+    `as_of` is when the fit is made, for the injury list (`injuries`): the
+    latest list fetched before it. By default it's the first tip-off on
+    the cutoff day, or with no games that day, the end of the day (US
+    Eastern), so a fit for a past day uses the list its games had
     """
 
     def __init__(
-        self, con: duckdb.DuckDBPyConnection, cutoff: date, season: int | None = None
+        self,
+        con: duckdb.DuckDBPyConnection,
+        cutoff: date,
+        season: int | None = None,
+        as_of: datetime | None = None,
     ):
         self.con = con
         self.cutoff = cutoff
         # None for every season in the data
         self.season = season
+        self._as_of = as_of
 
     def _before(self, table: str) -> duckdb.DuckDBPyRelation:
         return self.con.sql(
@@ -220,6 +262,70 @@ class History:
             WHERE game_id IN (SELECT unnest(?::VARCHAR[])) AND min > 0""",
             [game_ids],
         ).fetchall()
+
+    @property
+    def as_of(self) -> datetime:
+        """When the fit is made, in UTC, naive (see the class)"""
+        if self._as_of is not None:
+            return self._as_of.astimezone(UTC).replace(tzinfo=None)
+        first = None
+        if table_exists(self.con, "schedule"):
+            first = self.con.execute(
+                "SELECT min(start_time) FROM schedule WHERE game_date = ?",
+                [self.cutoff],
+            ).fetchall()[0][0]
+        if first is None:
+            end = datetime.combine(self.cutoff + timedelta(days=1), datetime.min.time())
+            first = end.replace(tzinfo=EASTERN).astimezone(UTC).replace(tzinfo=None)
+        return first
+
+    def injuries(self) -> InjuryList | None:
+        """
+        ESPN's injury list (nba.espn_injuries) as of `as_of`: its latest
+        fetch before then in the season, or None if there's none (before
+        November 12, 2026, and whenever `load` hasn't loaded the lists).
+        Each team's next game is its first in nba.schedule starting after
+        the fetch
+        """
+        if not table_exists(self.con, "injuries"):
+            return None
+        as_of = self.as_of
+        season = "true" if self.season is None else f"season = {int(self.season)}"
+        (fetched,) = self.con.execute(
+            f"SELECT max(fetched_at) FROM injuries WHERE {season} AND fetched_at < ?",
+            [as_of],
+        ).fetchall()[0]
+        if fetched is None:
+            return None
+        players = {
+            p: Injury(*rest)
+            for p, *rest in self.con.execute(
+                """SELECT player_id, status, fantasy_status, return_date
+                FROM injuries WHERE fetched_at = ?""",
+                [fetched],
+            ).fetchall()
+        }
+        next_games: dict[str, tuple[str, date]] = {}
+        if table_exists(self.con, "schedule"):
+            rows = self.con.execute(
+                f"""
+                WITH g AS (
+                    SELECT team_id, game_id, game_date,
+                        coalesce(start_time, game_date + INTERVAL 1 DAY) AS start
+                    FROM schedule WHERE {season}
+                    UNION ALL
+                    SELECT opp_team_id, game_id, game_date,
+                        coalesce(start_time, game_date + INTERVAL 1 DAY)
+                    FROM schedule WHERE {season}
+                )
+                SELECT team_id, arg_min(game_id, (start, game_id)),
+                    arg_min(game_date, (start, game_id))
+                FROM g WHERE start > ? GROUP BY team_id
+                """,
+                [fetched],
+            ).fetchall()
+            next_games = {team: (game, day) for team, game, day in rows}
+        return InjuryList(fetched, players, next_games)
 
     def actual_minutes(self, game_ids: list[str]) -> list[tuple[str, str, str, float]]:
         """
@@ -460,10 +566,7 @@ def lines_query(con: duckdb.DuckDBPyConnection) -> str:
     SQL for each game's closing line from `results`' team's side, from the
     temp table `lines` if it's loaded: (game_id, line_margin, line_total)
     """
-    loaded = con.execute(
-        "SELECT count(*) FROM duckdb_tables() WHERE temporary AND table_name = 'lines'"
-    ).fetchall()[0][0]
-    if not loaded:
+    if not table_exists(con, "lines"):
         return """SELECT NULL::VARCHAR AS game_id, NULL::DOUBLE AS line_margin,
             NULL::DOUBLE AS line_total WHERE false"""
     return "FROM lines"
@@ -595,7 +698,9 @@ def rmse(errors: np.ndarray) -> float | None:
 def load(con: duckdb.DuckDBPyConnection, out: Path = OUT) -> None:
     """
     The tables `History` reads: `results`, `player_games`, `bio`,
-    `openrapm`, and `all_segments` if built; and `lines`, for scoring
+    `openrapm`, `injuries` (ESPN's injury lists), `schedule`
+    (`yarapm.games.schedule_query`), and `all_segments` if built; and
+    `lines`, for scoring
     """
     load_results(con)
     load_lines(con)
@@ -628,6 +733,15 @@ def load(con: duckdb.DuckDBPyConnection, out: Path = OUT) -> None:
         CREATE OR REPLACE TEMP TABLE openrapm AS
         SELECT season, player_id, possessions, o_rating, d_rating FROM nba.openrapm
     """)
+    # both from 2027 (2026-27) on, so they're small. Times in UTC, without
+    # a zone: TIMESTAMPTZ needs pytz in Python
+    con.execute("""
+        CREATE OR REPLACE TEMP TABLE injuries AS
+        SELECT season, timezone('UTC', fetched_at) AS fetched_at, team_id,
+            player_id, status, fantasy_status, return_date
+        FROM nba.espn_injuries
+    """)
+    con.execute(f"CREATE OR REPLACE TEMP TABLE schedule AS {schedule_query()}")
     if (out / "segments").is_dir():
         read(con, "segments", out).create_view("all_segments", replace=True)
 

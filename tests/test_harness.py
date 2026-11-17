@@ -1,10 +1,15 @@
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import duckdb
 import pytest
 
 from yarapm.baselines import HomeCourt
-from yarapm.harness import Game, History, Prediction, fit_days, run, score
+from yarapm.harness import EASTERN, Game, History, Prediction, fit_days, run, score
+
+
+def utc(*args: int) -> datetime:
+    """A time in UTC without a zone, as `History` has them"""
+    return datetime(*args, tzinfo=UTC).replace(tzinfo=None)
 
 
 def results(con, games):
@@ -200,3 +205,18 @@ def test_age_without_offseason():
     h = History(con, date(2021, 1, 5), 2021)
     assert h.offseasons() == []
     assert ages(h, False) == ages(h, True)
+
+
+def test_as_of():
+    con = duckdb.connect()
+    # no schedule: the end of the cutoff day, US Eastern
+    assert History(con, date(2026, 11, 16)).as_of == utc(2026, 11, 17, 5)
+    con.execute("""CREATE TEMP TABLE schedule AS
+        SELECT DATE '2026-11-16' AS game_date, t AS start_time
+        FROM (VALUES (TIMESTAMP '2026-11-17 00:30'), (TIMESTAMP '2026-11-17 03:00')) v(t)""")
+    # the first tip-off
+    assert History(con, date(2026, 11, 16)).as_of == utc(2026, 11, 17, 0, 30)
+    assert History(con, date(2026, 11, 18)).as_of == utc(2026, 11, 19, 5)
+    # given: in UTC
+    given = datetime(2026, 11, 16, 13, tzinfo=EASTERN)
+    assert History(con, date(2026, 11, 16), as_of=given).as_of == utc(2026, 11, 16, 18)
