@@ -1,5 +1,5 @@
 import json
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import duckdb
@@ -14,6 +14,7 @@ from yarapm.publish import (
     catalog,
     current,
     dataset_path,
+    log_tables,
     metadata_path,
     model_version,
     ratings_table,
@@ -402,3 +403,36 @@ def test_validate_players_centered():
     )
     with pytest.raises(ValueError, match="player ratings are centered"):
         validate(con, 1)
+
+
+def test_log_tables_log_each_models_minutes(tmp_path):
+    con = duckdb.connect()
+    for table, pts in [("rapm_p", 110.0), ("pattern_p", 112.0), ("team_p", 108.0)]:
+        con.execute(f"""CREATE TEMP TABLE {table} AS
+            SELECT 'g1' AS game_id, DATE '2026-11-02' AS game_date,
+                '2026-11-03 00:00:00+00'::TIMESTAMPTZ AS start_time,
+                {pts} AS home_pts, 105.0 AS away_pts, 100.0 AS poss,
+                0.6 AS home_win_prob, DATE '2026-11-02' AS as_of_date""")
+    for table, m in [("minutes", 30.0), ("pattern_m", 24.0)]:
+        con.execute(f"""CREATE TEMP TABLE {table} AS
+            SELECT 'g1' AS game_id, 'H' AS team_id, 'p' || i AS player_id,
+                {m} AS min, 0.9 AS play_prob, DATE '2026-11-02' AS as_of_date
+            FROM range(8) r(i)""")
+    log_tables(
+        con,
+        datetime(2026, 11, 2, 12, tzinfo=UTC),
+        date(2026, 11, 2),
+        "c",
+        {
+            "rapm": ("rapm_p", "{}", "minutes"),
+            "rapm_pattern": ("pattern_p", "{}", "pattern_m"),
+            "team": ("team_p", "{}", None),
+        },
+        {log: tmp_path / f"{log}.parquet" for log in ("prediction_log", "minutes_log")},
+    )
+    assert con.sql(
+        "SELECT model, home_pts FROM prediction_log ORDER BY model"
+    ).fetchall() == [("rapm", 110), ("rapm_pattern", 112), ("team", 108)]
+    assert con.sql(
+        "SELECT model, count(*), sum(min) FROM minutes_log GROUP BY ALL ORDER BY ALL"
+    ).fetchall() == [("rapm", 8, 240), ("rapm_pattern", 8, 192)]

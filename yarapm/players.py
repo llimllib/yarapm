@@ -24,7 +24,9 @@ Expected score: that × adjusted tempo (yarapm.tempo) / 100.
 Minutes come from yarapm.minutes, by `minutes`: "actual" (the minutes
 played, a leak that measures rating error on its own), "known" (who plays
 is known, minutes projected) or "unknown" (who plays is projected too),
-with `minutes_half_life` and `start_bonus`.
+with `minutes_half_life` and `start_bonus`. With unknown availability,
+`injuries` says whether ESPN's injury list (#45) sets the chance of
+playing for the players on it; false is the pattern alone (#46).
 
 A game's age counts only days in a season, regular season to Finals:
 the breaks between seasons (about 128 days) are skipped, so the summer
@@ -125,6 +127,7 @@ class PlayerRatings:
         start_bonus: float = 5,
         offseason: bool = False,
         box_offseason: bool = True,
+        injuries: bool = True,
     ):
         self.half_life = half_life
         self.offseason = offseason
@@ -139,7 +142,7 @@ class PlayerRatings:
         self.projection: ActualMinutes | ProjectedMinutes = (
             ActualMinutes()
             if minutes == "actual"
-            else ProjectedMinutes(minutes, minutes_half_life, start_bonus)
+            else ProjectedMinutes(minutes, minutes_half_life, start_bonus, injuries)
         )
         self.ratings: rapm.Fit | None = None
         self.level = 0.0
@@ -177,6 +180,8 @@ class PlayerRatings:
                     "minutes_half_life": self.projection.half_life,
                     "start_bonus": self.projection.start_bonus,
                 }
+                # only when false, so runs from before #46 keep their ids
+                | ({} if self.projection.use_injuries else {"injuries": False})
             )
         )
 

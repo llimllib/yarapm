@@ -247,8 +247,11 @@ roster: one back from a long absence isn't projected until he plays.
 ### `prediction_log`
 
 Every prediction made for a game before it started, from the published
-model (`rapm`) and, to compare it to, a team-rating baseline (`team`,
-KenPom-style). Each build logs its predictions for the games in the next 7
+model (`rapm`) and two to compare it to: `rapm_pattern`, the same model
+without ESPN's injury list, guessing who plays from each player's recent
+pattern alone (from November 17, 2026, to measure what the list adds),
+and a team-rating baseline (`team`, KenPom-style). `predictions` and
+`minutes` are `rapm`'s. Each build logs its predictions for the games in the next 7
 days that haven't started, but only where a game's prediction has changed
 since its last row (so usually once a day, when the games before the day
 are added). Rows are never changed or removed: they're what was said
@@ -261,7 +264,7 @@ before the game. Keyed by `season`, `model`, `game_id` and `created`.
 | game_date ... as_of_date | | As in `predictions` |
 
 `team` predictions use their own spread for `home_win_prob`, 13.93
-points, its error on 2021-2024.
+points, its error on 2021-2024; `rapm_pattern` uses `rapm`'s, 13.71.
 
 ```sql
 -- what was predicted for each finished game: the last row before tip-off
@@ -272,7 +275,8 @@ QUALIFY row_number() OVER (PARTITION BY game_id ORDER BY created DESC) = 1;
 
 ### `minutes_log`
 
-The projected minutes behind each `rapm` prediction in `prediction_log`,
+The projected minutes behind each `rapm` and `rapm_pattern` prediction in
+`prediction_log`,
 keyed by `season`, `model`, `game_id`, `created` and `player_id`, with
 `team_id`, `min` and `play_prob` as in `minutes`.
 
@@ -296,7 +300,7 @@ until a logged game has finished.
 | sigma | DOUBLE | The series' margin RMSE over all its games |
 | log_loss, brier | DOUBLE | The win probabilities scored with `sigma` as the spread, as yarapm's test harness scores them, so they compare with its results |
 | published_log_loss, published_brier | DOUBLE | The win probabilities as published, with the fixed spread |
-| minutes_mae | DOUBLE | `rapm`'s mean absolute error in projected minutes per player, over everyone projected or who played, against minutes played scaled to 240 a team. NULL for `team` |
+| minutes_mae | DOUBLE | `rapm`'s or `rapm_pattern`'s mean absolute error in projected minutes per player, over everyone projected or who played, against minutes played scaled to 240 a team. NULL for `team` |
 
 The `post_deadline` phase needs the season's trade deadline in
 `yarapm.harness.TRADE_DEADLINES`; until it's added, those games count as

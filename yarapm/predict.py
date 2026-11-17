@@ -2,7 +2,7 @@
 Predict games that haven't been played (#26).
 
     uv run python -m yarapm.predict [--date 2026-11-05] [--days 7]
-        [--model rapm|team] [--no-segments]
+        [--model rapm|rapm_pattern|team] [--no-segments]
 
 Rebuilds every season's segments (yarapm.segments), fits the model on every
 game before `--date`, as the harness does for a day, and predicts the games
@@ -16,7 +16,9 @@ The live models are LIVE_MODELS: `rapm` with unknown availability (#11),
 since who plays in a future game isn't known, and the `team` baseline to
 compare it to (#29), each with its default settings otherwise. `rapm`
 uses ESPN's injury list (#45) for the chance of playing: here the last
-one fetched before `--date`'s first tip-off (`History`).
+one fetched before `--date`'s first tip-off (`History`). `rapm_pattern` is
+`rapm` without the list, guessing who plays from each player's recent
+pattern alone: it's logged beside `rapm` to measure the list (#46).
 
 Win probability is P(margin > 0) for a normal centered on the predicted
 margin, as the harness scores it, but with a fixed spread: a live
@@ -40,12 +42,27 @@ from yarapm.harness import EASTERN, Game, History, Model, Prediction, load
 from yarapm.players import PlayerRatings
 
 # margin RMSE of each model's daily run on 2021-2024: rapm-93ea3652 (minutes
-# unknown) and team-2ac45b4a
-SIGMA = {"rapm": 13.71, "team": 13.93}
+# unknown) and team-2ac45b4a. `rapm_pattern` is `rapm` on those seasons,
+# which have no injury list
+SIGMA = {"rapm": 13.71, "rapm_pattern": 13.71, "team": 13.93}
+
+
+def pattern_model() -> PlayerRatings:
+    """
+    The live `rapm` model without the injury list, guessing who plays from
+    the pattern alone: logged beside it to measure the list (#46)
+    """
+    model = PlayerRatings(minutes="unknown", injuries=False)
+    model.name = "rapm_pattern"
+    return model
 
 
 def live_models() -> dict[str, Model]:
-    return {"rapm": PlayerRatings(minutes="unknown"), "team": TeamRatings()}
+    return {
+        "rapm": PlayerRatings(minutes="unknown"),
+        "rapm_pattern": pattern_model(),
+        "team": TeamRatings(),
+    }
 
 
 @dataclass(frozen=True)

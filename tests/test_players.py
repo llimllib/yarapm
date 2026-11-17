@@ -7,6 +7,7 @@ import pytest
 
 from yarapm.harness import Game, History
 from yarapm.players import PlayerRatings
+from yarapm.predict import live_models
 
 TEAMS = {t: [f"{t}{i}" for i in range(6)] for t in "ABCD"}
 LEAGUE = 110.0
@@ -131,3 +132,12 @@ def test_predicts_from_ratings_and_minutes():
     ) + 2 * HOME
     assert prediction.poss == pytest.approx(100, rel=1e-6)
     assert prediction.pts - prediction.opp_pts == pytest.approx(expected, abs=1e-3)
+
+
+def test_injuries_setting_keeps_run_ids():
+    # the default isn't in the settings, so runs from before #46 keep their ids
+    assert "injuries" not in PlayerRatings(minutes="unknown").settings
+    models = live_models()
+    pattern = models["rapm_pattern"]
+    assert pattern.name == "rapm_pattern" and models["rapm"].name == "rapm"
+    assert pattern.settings == models["rapm"].settings | {"injuries": False}

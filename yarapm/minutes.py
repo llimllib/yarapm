@@ -114,13 +114,20 @@ class ActualMinutes:
 
 class ProjectedMinutes:
     def __init__(
-        self, availability: str = "known", half_life: float = 5, start_bonus: float = 5
+        self,
+        availability: str = "known",
+        half_life: float = 5,
+        start_bonus: float = 5,
+        injuries: bool = True,
     ):
         if availability not in ("known", "unknown"):
             raise ValueError(f"availability {availability!r} is 'known' or 'unknown'")
         self.availability = availability
         self.half_life = half_life
         self.start_bonus = start_bonus
+        # whether unknown availability reads the injury list: false is the
+        # pattern alone, logged live to measure the list (#46)
+        self.use_injuries = injuries
         self.playing: dict[str, float] = {}
         self.chances: dict[tuple[int, int], float] = {}
         self.chances_season: int | None = None
@@ -135,7 +142,7 @@ class ProjectedMinutes:
                 self.chances = availability(history)
                 self.chances_season = history.season
             self.rosters = rosters(history)
-            self.injuries = history.injuries()
+            self.injuries = history.injuries() if self.use_injuries else None
 
     def when_playing(self, history: History) -> dict[str, float]:
         """Each player's projected minutes if they play"""

@@ -3,7 +3,7 @@ The datasets we publish (#27), under the `yarapm/` prefix of the
 basketball-data bucket, with their own catalog:
 
     uv run python -m yarapm.publish build [--date 2026-11-05] [--no-segments]
-    uv run python -m yarapm.publish backfill [--season 2018 ...] [--force] [--jobs 4]
+    uv run python -m yarapm.publish backfill [--season 2018 ...] [--force] [--jobs 2]
         [--no-segments]
     uv run python -m yarapm.publish catalog [--url https://basketball-data.billmill.org]
     uv run python -m yarapm.publish current
@@ -30,11 +30,14 @@ bucket's yarapm/ prefix, laid out like nba_data's, one file per season:
     minutes        each player's projected minutes and chance of playing
                    in those games
     prediction_log every prediction made before its game (#29), from the
-                   live `rapm` and `team` models, for the games in the
-                   next LOG_DAYS days that haven't started. A build adds a
+                   live `rapm` model, and to compare it to, `rapm_pattern`
+                   (`rapm` without the injury list, #46) and `team`, for
+                   the games in the next LOG_DAYS days that haven't
+                   started. A build adds a
                    row only when a game's prediction has changed since its
                    last one, and never changes a row
-    minutes_log    `rapm`'s projected minutes for each prediction it logs
+    minutes_log    `rapm`'s and `rapm_pattern`'s projected minutes for each
+                   prediction they log
     live_metrics   the log scored: for each finished game, the last
                    prediction made before tip-off, with the harness's
                    metrics, by series (model, commit and settings) and
@@ -107,10 +110,10 @@ from yarapm import segments
 from yarapm.baselines import TeamRatings
 from yarapm.catalog import OUT, connect
 from yarapm.games import load_results
-from yarapm.harness import History, load, phases, score
+from yarapm.harness import Game, History, load, phases, score
 from yarapm.minutes import ProjectedMinutes
 from yarapm.players import PlayerRatings
-from yarapm.predict import EASTERN, Forecast, forecast, scheduled
+from yarapm.predict import EASTERN, Forecast, forecast, pattern_model, scheduled
 from yarapm.strength import lineups, team_ratings
 
 PUBLISH = OUT / "publish"
@@ -391,13 +394,7 @@ def build(
 
     # the injury list is the latest fetched before the build (#45)
     forecasts = forecast(con, model, games, day, now)
-    assert isinstance(model.projection, ProjectedMinutes)
-    minutes = model.projection.predict([g for g, _ in games])
-    chances = {
-        (g.game_id, team): model.projection.playing_chances(team, g)
-        for g, _ in games
-        for team in (g.team_id, g.opp_team_id)
-    }
+    minutes, chances = projected(model, [g for g, _ in games])
     # the build's day is rated again by every build
     daily_tables(
         con,
@@ -413,18 +410,40 @@ def build(
     team = TeamRatings()
     window = [(g, start) for g, start in games if (g.game_date - day).days < LOG_DAYS]
     team_forecasts = forecast(con, team, window, day)
+    # the same model without the injury list, only logged (#46)
+    pattern = pattern_model()
+    pattern_forecasts = forecast(con, pattern, window, day, now)
+    pattern_minutes, pattern_chances = projected(pattern, [g for g, _ in window])
 
     predictions_table(con, forecasts, season, day)
     predictions_table(con, team_forecasts, season, day, "team_predictions")
+    predictions_table(con, pattern_forecasts, season, day, "pattern_predictions")
     minutes_table(con, minutes, chances, day)
+    minutes_table(
+        con,
+        pattern_minutes,
+        pattern_chances,
+        day,
+        "pattern_minutes",
+        "pattern_predictions",
+    )
     log_tables(
         con,
         now,
         day,
         sha,
         {
-            model.name: ("predictions", settings),
-            team.name: ("team_predictions", json.dumps(team.settings, sort_keys=True)),
+            model.name: ("predictions", settings, "minutes"),
+            pattern.name: (
+                "pattern_predictions",
+                json.dumps(pattern.settings, sort_keys=True),
+                "pattern_minutes",
+            ),
+            team.name: (
+                "team_predictions",
+                json.dumps(team.settings, sort_keys=True),
+                None,
+            ),
         },
         {log: dataset_path(root, log, season) for log in LOGS},
     )
@@ -440,7 +459,11 @@ def build(
         "settings": model.settings,
         "model_version": version,
     }
-    both = {"commit": sha, "model": f"{model.name}, {team.name}", "settings": None}
+    both = {
+        "commit": sha,
+        "model": f"{model.name}, {pattern.name}, {team.name}",
+        "settings": None,
+    }
     write_metadata(
         root,
         {
@@ -453,6 +476,25 @@ def build(
         },
     )
     return written
+
+
+def projected(
+    model: PlayerRatings, games: list[Game]
+) -> tuple[
+    dict[tuple[str, str], dict[str, float]], dict[tuple[str, str], dict[str, float]]
+]:
+    """
+    A fit model's projected minutes in `games`, and each player's chance of
+    playing, both by (game_id, team_id)
+    """
+    assert isinstance(model.projection, ProjectedMinutes)
+    minutes = model.projection.predict(games)
+    chances = {
+        (g.game_id, team): model.projection.playing_chances(team, g)
+        for g in games
+        for team in (g.team_id, g.opp_team_id)
+    }
+    return minutes, chances
 
 
 def backfill_seasons(
@@ -652,10 +694,12 @@ def minutes_table(
     minutes: dict[tuple[str, str], dict[str, float]],
     chances: dict[tuple[str, str], dict[str, float]],
     day: date,
+    name: str = "minutes",
+    predictions: str = "predictions",
 ) -> None:
     """
-    Temp table `minutes`: each player's projected minutes and chance of
-    playing (`chances`, by game and team)
+    Temp table `name`: each player's projected minutes and chance of
+    playing (`chances`, by game and team) in the games in `predictions`
     """
     rows = [
         (game_id, team, player, m, chances[game_id, team].get(player, 0.0))
@@ -674,12 +718,12 @@ def minutes_table(
         },
     )
     con.execute(
-        """
-        CREATE OR REPLACE TEMP TABLE minutes AS
+        f"""
+        CREATE OR REPLACE TEMP TABLE {name} AS
         SELECT m.game_id, m.team_id, m.player_id, round(m.min, 2) AS min,
             round(m.play_prob, 4) AS play_prob,
             ?::DATE AS as_of_date
-        FROM projected m JOIN predictions p USING (game_id)
+        FROM projected m JOIN {predictions} p USING (game_id)
         ORDER BY p.game_date, p.start_time, m.game_id, m.team_id, m.min DESC,
             m.player_id
         """,
@@ -823,15 +867,16 @@ def log_tables(
     now: datetime,
     day: date,
     sha: str,
-    models: dict[str, tuple[str, str]],
+    models: dict[str, tuple[str, str, str | None]],
     existing: dict[str, Path],
 ) -> None:
     """
     Temp tables `prediction_log` and `minutes_log`: the `existing` files
     (by log), and the predictions in each model's table (`models`: name ->
-    (table, settings)) for the games in the next LOG_DAYS days that haven't
-    started by `now`, where they've changed since the game's last row.
-    `minutes_log` gets the `minutes` of the `rapm` predictions logged
+    (table, settings, minutes table or None)) for the games in the next
+    LOG_DAYS days that haven't started by `now`, where they've changed
+    since the game's last row. `minutes_log` gets the minutes behind each
+    prediction logged, for the models that have them
     """
     created = now.astimezone(UTC).isoformat()
     made = " UNION ALL ".join(
@@ -840,7 +885,13 @@ def log_tables(
         FROM {table}
         WHERE game_date < DATE '{day}' + {LOG_DAYS}
             AND start_time > '{created}'::TIMESTAMPTZ"""
-        for name, (table, settings) in models.items()
+        for name, (table, settings, _) in models.items()
+    )
+    logged_minutes = " UNION ALL BY NAME ".join(
+        f"""(SELECT l.model, l.created, m.* EXCLUDE (as_of_date)
+        FROM {minutes} m JOIN logged l ON l.model = '{name}' AND l.game_id = m.game_id)"""
+        for name, (_, _, minutes) in models.items()
+        if minutes is not None
     )
     old = {
         log: f"read_parquet('{path}')" if path.exists() else f"(FROM {log}_empty)"
@@ -882,8 +933,7 @@ def log_tables(
         CREATE OR REPLACE TEMP TABLE minutes_log AS
         SELECT * FROM {old["minutes_log"]}
         UNION ALL BY NAME
-        SELECT l.model, l.created, m.* EXCLUDE (as_of_date)
-        FROM minutes m JOIN logged l ON l.model = 'rapm' AND l.game_id = m.game_id
+        {logged_minutes}
         ORDER BY created, model, game_id, team_id, min DESC, player_id
     """)
 

@@ -229,3 +229,18 @@ def test_no_injury_list_changes_nothing():
     after = unknown(con)
     assert after.injuries is None
     assert after.predict(SCHEDULED) == expected
+
+
+def test_the_pattern_alone_ignores_the_list():
+    con = duckdb.connect()
+    tables(con, [("A", "B", {"A": team(A_STARTERS, ["a6", "a7", "a8"]), "B": B})] * 5)
+    expected = unknown(con).predict(SCHEDULED)
+    schedule_and_injuries(
+        con, [(utc(2023, 11, 6, 12), "a1", "out", "OUT", date(2023, 12, 1))]
+    )
+    assert unknown(con).predict(SCHEDULED)["x1", "A"]["a1"] == 0
+    pattern = ProjectedMinutes("unknown", half_life=5, start_bonus=0, injuries=False)
+    pattern.chances, pattern.chances_season = {(0, 5): 0.9}, 2024
+    pattern.fit(History(con, date(2023, 11, 6), 2024))
+    assert pattern.injuries is None
+    assert pattern.predict(SCHEDULED) == expected
