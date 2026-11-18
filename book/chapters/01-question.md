@@ -138,8 +138,8 @@ and they play in groups of five.
 |:--|--:|--:|
 | home court only | 14.98 | 0.687 |
 | team ratings (`team`) | 13.93 | 0.636 |
-| player ratings, who plays guessed | 13.71 | 0.624 |
-| player ratings, who plays known | 13.58 | 0.613 |
+| player ratings, who plays guessed | 13.68 | 0.623 |
+| player ratings, who plays known | 13.54 | 0.612 |
 
 Table: How far off each model's predicted margin is, in points (the
 root mean square error, @ch:evaluation), and its log loss on win
@@ -148,11 +148,11 @@ from the games before its day. {#tbl:scoreboard}
 
 @tbl:scoreboard is the payoff. Predicting every game with only a
 home-court edge misses the margin by about 15 points. Rating teams cuts
-that to 13.9, and rating players to 13.7, or 13.6 when we know who will
-play. These differences look small, but most of the 13.6 is the
+that to 13.9, and rating players to 13.7, or 13.5 when we know who will
+play. These differences look small, but most of the 13.5 is the
 randomness of a single game, which no model can remove. Even a model
 allowed to cheat, by using player ratings fit to the whole season
-including the games it predicts, only gets to 13.06. Against that floor,
+including the games it predicts, only gets to 13.10. Against that floor,
 the step from teams to players is a good share of the error that can be
 removed at all.
 
@@ -194,7 +194,7 @@ so every query reads `nba.<table>`, and what yarapm builds goes under
 `out/`, one Parquet file per season.
 
 The no-peeking rule is enforced by a class: a model is fit on a
-[`History`](code:yarapm/harness.py#L122), whose every table is filtered to
+[`History`](code:yarapm/harness.py#L154), whose every table is filtered to
 games before the day being predicted, and that's all it can see. Which
 games count at all (regular season, play-in, playoffs and the Cup final,
 but not preseason or the All-Star game) is decided in

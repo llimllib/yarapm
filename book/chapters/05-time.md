@@ -10,8 +10,8 @@ enough to tell Nikola Jokić from an average player with any confidence.
 These pull in opposite directions. More seasons of data mean better
 estimates of the player as they *were*, and worse estimates of the player
 as they *are*. This chapter resolves the tension the standard way, by
-weighting old games less, and then deals with a second thing that changes
-over time: the league itself.
+weighting old games less, then lets players age, and then deals with a
+second thing that changes over time: the league itself.
 
 ## Exponential decay
 
@@ -97,6 +97,92 @@ predicted 2021–2024 just as well (a daily margin RMSE of 13.570, against
 default.
 :::
 
+## Aging {#sec:aging}
+
+Decay treats an old game as weaker evidence about a player, but still
+as evidence about the same player. For a 21-year-old that's wrong in a
+predictable direction: last season's games show a worse player than the
+one playing tonight. For a 32-year-old they show a better one. Neither
+half life helps. A shorter one forgets the old player sooner, but it
+forgets the evidence about the player along with them.
+
+The model noticed. Early in a season, when the ratings are mostly last
+season's, its predicted margins were too spread out: regressing the
+actual margins on the predicted ones, over 2021–2024's games played
+before either team's 20th, gave a slope of 0.77, so a predicted 10-point win was on average a 7.7-point
+one. The closing betting line, on the same games, had a slope of 0.92.
+
+::: {.definition #def:aging title="Aging"}
+Let $a_i(t)$ be player $i$'s age in season $t$, and let $A^o$ and $A^d$
+be *aging curves*, each a cubic in age,
+$$
+A(a) = \gamma_1 (a - 27) + \gamma_2 \frac{(a - 27)^2}{10} + \gamma_3 \frac{(a - 27)^3}{100},
+$$ {#eq:aging}
+with ages clamped to 19–38. In a fit for season $T$, a segment $s$ from
+season $t_s$ is modeled as
+$$
+\begin{aligned}
+r_s = \mu & + \sum_{i \in O_s} \left(o_i - \Delta^o_{is}\right) \\
+& - \sum_{j \in D_s} \left(d_j - \Delta^d_{js}\right) + \varepsilon_s ,
+\end{aligned}
+$$ {#eq:apm-aging}
+where $\Delta_{is} = A(a_i(T)) - A(a_i(t_s))$ is how much the curve
+says player $i$ has changed since the segment was played.
+:::
+
+So $o_i$ and $d_i$ are the player as of season $T$, and each old segment
+is read as evidence about that player, after allowing for the years in
+between. In segments from this season, $\Delta = 0$. Because
+@eq:aging is linear in the $\gamma$s, the $\Delta$ terms sum to six more
+columns of $X$, three for offense and three for defense, and the
+$\gamma$s are covariates like home court (@sec:covariates). They're
+fit along with the ratings, with a small penalty of their own, from how
+players' plus-minus changed between seasons as they got older. Ages
+come from nba_data's season stats, as a year of birth.
+
+::: {.remark #rem:aging-level}
+Only the curve's shape is learned. If every player's offense improved
+by $c$ points a year, the five offensive players in a segment from $k$
+seasons ago would all have been $c\,k$ worse than they are today, $5c\,k$
+points per 100 in all, the same for every segment of that season. The
+season offsets absorb a shift like that, so a constant added to the
+yearly change at every age changes no prediction. What the data pins
+down is how players of one age change compared with players of
+another.
+:::
+
+![(a) The aging curves fit on the opening night of 2026: how much a
+year changes a rating, by age, for offense (solid) and defense (dashed).
+Only the shape matters (@rem:aging-level). Past 34 there are few players
+left, and the cubic turns up. (b) The change in each regular's rating
+(3,000 or more possessions in 2025) from the last day of 2025 to the
+first day of 2026, by their age in 2026.](figures/aging.svg){#fig:aging}
+
+@fig:aging shows the curve. From one season to the next, a 20-year-old
+gains about 1.4 points per 100 possessions more than a 30-year-old, a
+little more of it on offense than on defense, and the gain shrinks
+steadily until the late twenties.
+Panel (b) is what this does to ratings over a summer. The regulars aged
+19 to 23 rose by 0.39 on average between the 2025 Finals and opening
+night, those aged 28 to 31 fell by 0.23, and without aging both groups
+moved by 0.02 or less. The gap between the two groups, 0.62, is about
+half what the curve says, because each rating is still pulled toward a
+box-score prior that doesn't age.
+
+::: {.example #ex:aging}
+On 2021–2024, with daily refits and who plays known, aging lowered the
+margin RMSE from 13.570 to 13.536, and from 13.475 to 13.405 in the
+games before either team's 20th. The early slope rose from 0.77 to 0.83, part
+of the way to the line's 0.92. A difference of 0.034 is small. But the
+two models predicted the same 5,133 games, and comparing their squared
+errors game by game, the difference is about four standard errors from
+zero, not noise. Two ways of going further did no better. Shifting the
+box-score prior along the curve as well, by the age of the box scores it
+was made from, was worse (13.605 against 13.549, weekly). Pulling each
+older season's evidence a fixed fraction toward the prior, a regression
+to the mean on top of the aging, gained 0.006, within the noise.
+:::
+
 ## The league's level {#sec:level}
 
 Players aren't the only things that change. @fig:league showed the
@@ -151,12 +237,16 @@ of the previous season, with the playoff term taken out.
 ::: code
 [`decay()`](code:yarapm/fit.py#L6) is one line. The ages, without the
 breaks between seasons, come from
-[`History.age()`](code:yarapm/harness.py#L162). The cutoff at eight half
+[`History.age()`](code:yarapm/harness.py#L204). The cutoff at eight half
 lives is applied in SQL, before any rows are read
-([`lineups()`](code:yarapm/players.py#L81)), so a fit reads only the
-segments that still matter: eight seasons of them, about 570,000 rows. The
+([`lineups()`](code:yarapm/players.py#L145)), so a fit reads only the
+segments that still matter: eight seasons of them, about 570,000 rows.
+The aging columns are
+[`aging_covariates()`](code:yarapm/players.py#L104), from the cubic in
+[`age_basis()`](code:yarapm/players.py#L85) and each player's year of
+birth ([`born()`](code:yarapm/players.py#L95)). The
 level is computed right after the ratings, in
-[`PlayerRatings.fit`](code:yarapm/players.py#L209), from the same rows
+[`PlayerRatings.fit`](code:yarapm/players.py#L268), from the same rows
 reweighted with the seven-day half life. Because @prop:memoryless makes
 a day's change in the weights a single factor, yesterday's ratings are a
 good starting point for today's solve, which is why each day's fit is
@@ -178,6 +268,21 @@ than the prior? What if they're in their second season?
 Show that if a weight function $w(a)$, with $w(0) = 1$, has the property
 of @prop:memoryless for every $a$ and $\Delta$, then $w(a) = c^a$ for some
 constant $c$. (Hint: $w(a + \Delta) = w(a)\, w(\Delta)$.)
+:::
+
+::: {.exercise #exr:aging-shape}
+Show that adding a constant $c$ to the offensive curve's yearly change at
+every age, $A^o(a) \to A^o(a) + c\,a$, changes the predicted rate of
+every segment from season $t$ by the same amount. How much, and why can
+the season offsets absorb it, but not a change that's larger for
+younger players?
+:::
+
+::: {.exercise #exr:aging-rookie}
+A player rated $+1$ today is 22. Their only games are from last season.
+Using panel (a) of @fig:aging, about what would last season's games alone have rated
+them, ignoring the prior? Why does panel (b) show a smaller change
+for players that age than (a) does?
 :::
 
 ::: {.exercise #exr:level-margin}

@@ -160,11 +160,11 @@ $-0.8$ and finished at $+4.1$. The prior was a sensible starting point
 for both, and the games moved each where they belonged.
 
 ::: code
-The prior is [`BoxPrior`](code:yarapm/prior.py#L202) in
-`yarapm/prior.py`. Its [`train`](code:yarapm/prior.py#L241) method fits
+The prior is [`BoxPrior`](code:yarapm/prior.py#L203) in
+`yarapm/prior.py`. Its [`train`](code:yarapm/prior.py#L242) method fits
 the two formulas when the season changes, from
-[`PlayerRatings.target`](code:yarapm/players.py#L226), the plain RAPM fit
-over every earlier season. [`box_features`](code:yarapm/prior.py#L142)
+[`PlayerRatings.target`](code:yarapm/players.py#L318), the plain RAPM fit
+over every earlier season. [`box_features`](code:yarapm/prior.py#L143)
 computes the eighteen inputs, with the steadying constants in
 [`RATES`](code:yarapm/prior.py#L42). Box scores go back to 2010, two
 years further than play-by-play, so the rookie formula has more seasons

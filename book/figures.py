@@ -794,6 +794,103 @@ def decay_weights() -> Svg:
     return s
 
 
+@figure("aging")
+def aging() -> Svg:
+    """
+    (a) The aging curve fit on the 2026 opener: how much a year older
+    changes a rating, by age. (b) How much each regular's rating moved
+    between the last day of 2025 and the first of 2026, by age
+    """
+    import numpy as np
+
+    from yarapm.harness import History, load
+    from yarapm.players import PlayerRatings, age_basis, born
+
+    con = connect()
+    load(con, ROOT / "out")
+    last, opener = con.execute(
+        """SELECT max(game_date) FILTER (season = 2025),
+            min(game_date) FILTER (season = 2026) FROM results"""
+    ).fetchall()[0]
+    moved = {}
+    for aging in (False, True):
+        m = PlayerRatings(minutes="unknown", aging=aging)
+        m.fit(History(con, last, 2025))
+        assert m.ratings is not None
+        before = m.ratings
+        m.fit(History(con, opener, 2026))
+        assert m.ratings is not None
+        moved[aging] = {
+            p: sum(m.ratings.rating(p)) - sum(before.rating(p))
+            for p in before.players
+            if p in m.ratings.players
+        }
+        curve = m.curve
+    assert curve is not None
+    ages = np.arange(19, 38)
+    step = np.diff(age_basis(ages.astype(float)) @ curve.T, axis=0)
+    for a_, (o, d) in zip(ages[:-1].tolist(), step):
+        print(
+            f"aging {a_} to {a_ + 1}: offense {o:+.2f}, defense {d:+.2f}, net {o + d:+.2f}"
+        )
+
+    births = born(History(con, opener, 2026))
+    poss = dict(
+        con.execute(
+            "SELECT player_id, sum(poss) FROM player_games WHERE season = 2025 GROUP BY 1"
+        ).fetchall()
+    )
+    regulars = [
+        (2026 - births[p], moved[True][p], moved[False][p])
+        for p in moved[True]
+        if p in births and (poss.get(p) or 0) >= 3000
+    ]
+    for lo, hi in ((19, 23), (24, 27), (28, 31), (32, 41)):
+        sel = [r for r in regulars if lo <= r[0] <= hi]
+        print(
+            f"aging summer {lo}-{hi}: {len(sel)} regulars, with aging "
+            f"{np.mean([r[1] for r in sel]):+.2f}, without {np.mean([r[2] for r in sel]):+.2f}"
+        )
+
+    s = Svg(
+        640,
+        240,
+        "(a) Two curves of the yearly change in rating by age, offense and defense, positive when young and negative from the late twenties. (b) Each regular's change in rating over the 2025 summer against their age, falling with age",
+    )
+    a = Axes(s, 60, 22, 240, 160, (19, 37), (-0.6, 1.0))
+    a.frame(
+        [20, 24, 28, 32, 36],
+        [-0.5, 0, 0.5, 1],
+        "age",
+        "change in a year",
+        yfmt=lambda v: f"{v:+g}" if v else "0",
+    )
+    s.line(a.px(19), a.py(0), a.px(37), a.py(0), stroke=FAINT, width=0.6, dash="2 2")
+    a.line(ages[:-1].tolist(), step[:, 0].tolist(), width=1.6)
+    a.line(ages[:-1].tolist(), step[:, 1].tolist(), width=1.2, dash="5 3")
+    s.text(a.px(20.5), a.py(step[1, 0]) - 6, "offense", size=10.5, italic=True)
+    s.text(a.px(21.5), a.py(step[2, 1]) + 20, "defense", size=10.5, italic=True)
+    s.text(300, 14, "(a) the aging curve", italic=True, anchor="end", size=12)
+
+    b = Axes(s, 385, 22, 235, 160, (19, 41), (-1.5, 1.5))
+    b.frame(
+        [20, 25, 30, 35, 40],
+        [-1, 0, 1],
+        "age in 2026",
+        "",
+        yfmt=lambda v: f"{v:+g}" if v else "0",
+    )
+    s.line(b.px(19), b.py(0), b.px(41), b.py(0), stroke=FAINT, width=0.6, dash="2 2")
+    jitter = np.random.default_rng(0).uniform(-0.3, 0.3, len(regulars))
+    b.points(
+        [r[0] + j for r, j in zip(regulars, jitter)],
+        [min(max(r[1], -1.5), 1.5) for r in regulars],
+        r=1.8,
+    )
+    s.text(620, 14, "(b) over the 2025 summer", italic=True, anchor="end", size=12)
+    return s
+
+
 @figure("drift")
 def drift() -> Svg:
     """The league's points per 100 possessions by month, three seasons"""
@@ -1028,16 +1125,8 @@ def availability_curves() -> Svg:
 
 # the daily `rapm` run with unknown availability on 2021-2024, the
 # scoreboard's (yarapm.harness --model rapm --cadence daily --set
-# minutes=unknown), with segments from 2019 on
-RUN = (
-    ROOT
-    / "out"
-    / "x2019"
-    / "runs"
-    / "predictions"
-    / "run=rapm-93ea3652"
-    / "data.parquet"
-)
+# minutes=unknown), with aging (#48) and segments from 2010 on
+RUN = ROOT / "out" / "runs" / "predictions" / "run=rapm-01e3ab77" / "data.parquet"
 
 
 def run_errors():

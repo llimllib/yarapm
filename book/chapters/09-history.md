@@ -55,9 +55,10 @@ The figure shows the model's habits as well as the player's. Within a
 season the rating moves in small steps, a game's worth of evidence at a
 time, and most at the start, when each game is a larger share of what's
 new. Between seasons it can jump, because the box-score formula is refit
-on opening night (@ch:prior). And the defensive line is the flatter one,
-which is true of the ratings generally: among 2026's regulars, the
-published defensive ratings have a standard deviation of 1.5 against
+on opening night (@ch:prior), and because every player gets a year
+older (@sec:aging), which moves young players up and older ones down.
+And the defensive line is the flatter one, which is true of the ratings
+generally: among 2026's regulars, the published defensive ratings have a standard deviation of 1.5 against
 offense's 1.8. Defense leaves less of a trace in the box score and in the
 scoring margin, so the data moves defensive ratings less far from their
 priors.
@@ -115,15 +116,15 @@ history in 2014 instead of 2018, without anyone doing anything. Days
 later, play-by-play for 2010 and 2011 arrived, and it started in 2012.
 
 ::: code
-The datasets are built by [`yarapm/publish.py`](code:yarapm/publish.py#L360):
+The datasets are built by [`yarapm/publish.py`](code:yarapm/publish.py#L371):
 `build` writes the current season every time nba_data updates, refitting
 only the new days if the season's files were built by this version (at
 about 0.2 to 0.9 seconds a day), and
-[`backfill`](code:yarapm/publish.py#L484) refits finished seasons whose
+[`backfill`](code:yarapm/publish.py#L535) refits finished seasons whose
 files are stale, which takes 45 to 75 minutes for all of them in GitHub
-Actions. The version is [`model_version`](code:yarapm/publish.py#L150).
+Actions. The version is [`model_version`](code:yarapm/publish.py#L161).
 The full-strength lineups are in
-[`yarapm/strength.py`](code:yarapm/strength.py#L88).
+[`yarapm/strength.py`](code:yarapm/strength.py#L89).
 
 Each season is one Parquet file, sorted by player and written in row
 groups of 20,480 rows. A reader filtering on one player can skip every
