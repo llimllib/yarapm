@@ -113,8 +113,8 @@ It learns what a scout would expect: in 2026 its defensive prior rises by
 0.40 points per 100 for each standard deviation of height (3.3 inches),
 and its offensive prior falls by 0.32 for each standard deviation of the
 log of the draft pick. On opening night of 2024, Victor Wembanyama, a
-7′4″ first overall pick, had a prior of $-0.8$ on offense and $+1.5$ on
-defense, $+0.7$ in total: about as good a prior as the formula gives
+7′4″ first overall pick, had a prior of $-0.9$ on offense and $+1.3$ on
+defense, $+0.4$ in total: about as good a prior as the formula gives
 anyone, and far from where Wembanyama would end up.
 
 A player's prior blends the two formulas by how much the box formula
@@ -126,8 +126,8 @@ first few games, rather than jumping on the strength of one.
 ![Victor Wembanyama's rookie season, 2024: total rating (solid) and
 box-score prior (dashed), as of each day. Early on the rating is the
 prior, give or take; as possessions accumulate, it pulls away. Wembanyama
-ended the regular season with 4,400 possessions, a prior of $+1.6$ and a
-rating of $+3.6$.](figures/wembanyama.svg){#fig:wembanyama}
+ended the regular season with 4,400 possessions, a prior of $+1.4$ and a
+rating of $+2.9$.](figures/wembanyama.svg){#fig:wembanyama}
 
 @fig:wembanyama follows Wembanyama through that season, and shows the
 prior and the penalty working together. Through November, with a few
@@ -136,10 +136,10 @@ dip as the early box scores came in modest. From January on, the prior
 rises as the box scores improve, and the rating rises faster:
 the plus-minus data saw something the box score didn't. By April the
 data, about 4,400 possessions against the penalty's 3,000, has the larger
-say (@thm:shrinkage), and the rating ends about two points above the
-prior.
+say (@thm:shrinkage), and the rating ends about a point and a half above
+the prior.
 
-Two seasons later, the same model's final 2026 rating for Wembanyama was $+9.2$,
+Two seasons later, the same model's final 2026 rating for Wembanyama was $+9.4$,
 second in the league behind Jokić.
 
 ## What the prior is worth
@@ -153,10 +153,10 @@ scale was tuned along with the penalty: anything from 1.0 to 1.3 did
 about equally well, and yarapm uses 1.
 
 The rookie numbers are a good test of the whole idea. In 2026, the first
-overall pick, Cooper Flagg, started from a prior of $+0.0$ and finished
-the season at $+0.3$. The second pick, Dylan Harper, whom we met coming
+overall pick, Cooper Flagg, started from a prior of $-0.3$ and finished
+the season at $+0.4$. The second pick, Dylan Harper, whom we met coming
 off the Spurs' bench in the Finals in @tbl:first-segments, started from
-$-0.8$ and finished at $+4.1$. The prior was a sensible starting point
+$-1.1$ and finished at $+3.8$. The prior was a sensible starting point
 for both, and the games moved each where they belonged.
 
 ::: code

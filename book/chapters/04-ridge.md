@@ -126,9 +126,9 @@ With $\sigma \approx 110$ points per 100 (@ch:regression) and $\lambda =
 3{,}000$, this says that before any games, we believe a player's
 offensive rating is within $\tau = 110/\sqrt{3000} \approx 2$ points per
 100 of the prior, give or take one standard deviation, and the same for
-defense. That's a strong belief, and it's roughly right: among the 112
+defense. That's a strong belief, and it's roughly right: among the 113
 players with at least 4,000 possessions in 2026, the published offensive
-ratings have a standard deviation of 2.0 and the defensive ones 1.7.
+ratings have a standard deviation of 1.9 and the defensive ones 1.7.
 
 ## Choosing $\lambda$
 
@@ -172,7 +172,7 @@ Jokić, whom no one believed was average before the season started. The
 cure is not a smaller penalty, which brings the funnel back, but more
 data and a better prior: more seasons of games (@ch:time) and a starting
 guess from each player's statistics (@ch:prior). The published 2026
-rating for Jokić, with both, is $+11.4$.
+rating for Jokić, with both, is $+9.8$.
 
 ## The other unknowns {#sec:covariates}
 

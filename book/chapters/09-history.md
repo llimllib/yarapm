@@ -43,13 +43,13 @@ each season. Gaps are offseasons, when there are no
 games.](figures/george.svg){#fig:george}
 
 @fig:george follows Paul George through sixteen seasons and five teams.
-In Indiana, George's rating ended each season between $+3.4$ and $+4.9$,
+In Indiana, George's rating ended each season between $+3.5$ and $+5.2$,
 with defense rated higher than offense in all but the last. After the
-trade to Oklahoma City it ended 2018 at $+3.0$ and 2019 at $+6.1$. Through
-five seasons with the Clippers it stayed between $+4.7$ and $+6.1$, most
+trade to Oklahoma City it ended 2018 at $+3.1$ and 2019 at $+5.9$. Through
+five seasons with the Clippers it stayed between $+4.3$ and $+6.0$, most
 of it on offense. In Philadelphia, with 41 games played in 2025 and
-49 in 2026, it fell to $+2.8$ and then $+2.4$, and this season, in
-Boston, it started near $+2.3$.
+49 in 2026, it fell to $+2.3$ and then $+1.9$, and this season, in
+Boston, it started near $+1.9$ and has risen to $+2.5$.
 
 The figure shows the model's habits as well as the player's. Within a
 season the rating moves in small steps, a game's worth of evidence at a
@@ -83,11 +83,11 @@ average team: at full strength (solid) and with the expected lineup
 (dashed). Ticks along the bottom are games Stephen Curry
 missed.](figures/warriors.svg){#fig:warriors}
 
-At full strength the Warriors averaged $+5.9$ points per 100 possessions
+At full strength the Warriors averaged $+5.6$ points per 100 possessions
 over the season, a good team. With the lineup expected each day they
-averaged $+3.2$, and the gap follows Curry's absences: on March 20, in
-the middle of Curry's longest stretch out, they were $+7.8$ at full strength
-and $+1.2$ as they would actually take the floor. A team rating fit to
+averaged $+3.0$, and the gap follows Curry's absences: on March 20, in
+the middle of Curry's longest stretch out, they were $+7.3$ at full strength
+and $+1.0$ as they would actually take the floor. A team rating fit to
 results, @ch:question's baseline, sees one number somewhere in between
 and can't tell which team is playing tonight.
 

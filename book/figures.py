@@ -1035,10 +1035,27 @@ def wembanyama() -> Svg:
     print(
         f"wembanyama 2024: first {rows[0][0]} rating {rows[0][1]:+.2f}, last {rows[-1][0]} rating {rows[-1][1]:+.2f} prior {rows[-1][2]:+.2f}, {rows[-1][3]} possessions"
     )
+    o, d = con.execute("""
+        SELECT r.o_prior, r.d_prior FROM yarapm.ratings_daily r JOIN nba.players p USING (player_id)
+        WHERE r.season = 2024 AND p.name = 'Victor Wembanyama' ORDER BY r.as_of_date LIMIT 1
+    """).fetchall()[0]
+    print(
+        f"wembanyama 2024 opening prior: offense {o:+.2f}, defense {d:+.2f}, total {o + d:+.2f}"
+    )
+    for rank, name, rating in con.execute("""
+        WITH last AS (
+            SELECT p.name, r.rating FROM yarapm.ratings_daily r JOIN nba.players p USING (player_id)
+            WHERE r.season = 2026 AND r.as_of_date = (
+                SELECT max(as_of_date) FROM yarapm.ratings_daily WHERE season = 2026)
+        )
+        SELECT rank() OVER (ORDER BY rating DESC), name, rating FROM last
+        ORDER BY rating DESC LIMIT 3
+    """).fetchall():
+        print(f"final 2026 rating #{rank}: {name} {rating:+.2f}")
     s = Svg(
         640,
         240,
-        "Line chart: Wembanyama's rating rose from about +0.6 to +3.2 through his rookie season, pulling away from his box-score prior",
+        "Line chart: Wembanyama's rating rose from about +0.5 to +2.9 through his rookie season, pulling away from his box-score prior",
     )
     a = Axes(s, 60, 15, 510, 170, (0, 240), (-1, 5))
     months = [
@@ -1259,6 +1276,14 @@ def george() -> Svg:
         print(
             f"george {season}: final {last[4]:+.2f} (offense {last[2]:+.2f}, defense {last[3]:+.2f}), {', '.join(teams)}"
         )
+    o_sd, d_sd, n = con.execute("""
+        SELECT stddev(o_rating), stddev(d_rating), count(*) FROM yarapm.ratings_daily
+        WHERE season = 2026 AND possessions >= 2000 AND as_of_date = (
+            SELECT max(as_of_date) FROM yarapm.ratings_daily WHERE season = 2026)
+    """).fetchall()[0]
+    print(
+        f"2026 regulars (2,000+ possessions), final day: {n}, offense sd {o_sd:.2f}, defense sd {d_sd:.2f}"
+    )
     start, end = date(2013, 10, 1), date(2026, 12, 1)
     span = (end - start).days
     s = Svg(
@@ -1340,6 +1365,14 @@ def warriors() -> Svg:
     print(
         f"warriors: {len(rows)} days; Curry played {len(played)}, missed {len(missed)} of {len(games)}; largest gap full minus today {max(f - n for d, f, n in rows):+.2f}"
     )
+    print(
+        f"warriors average: full strength {sum(r[1] for r in rows) / len(rows):+.2f}, expected lineup {sum(r[2] for r in rows) / len(rows):+.2f}"
+    )
+    for d, f, n in rows:
+        if d == date(2026, 3, 20):
+            print(
+                f"warriors 2026-03-20: full strength {f:+.2f}, expected lineup {n:+.2f}"
+            )
     s = Svg(
         640,
         250,
