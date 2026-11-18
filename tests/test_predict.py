@@ -71,8 +71,8 @@ def test_forecast():
     (f,) = forecast(con, model, games, date(2026, 11, 4))
     assert (model.history.cutoff, model.history.season) == (date(2026, 11, 4), 2027)
     # a 10 point margin with the fixed spread
-    assert SIGMA["rapm"] == 13.68
-    assert f.win_prob == pytest.approx(0.7676, abs=1e-4)
+    assert SIGMA["rapm"] == 13.66
+    assert f.win_prob == pytest.approx(0.7679, abs=1e-4)
 
     other = (
         Game("g2", 2028, date(2027, 10, 20), "regular_season", "H", "A", True),

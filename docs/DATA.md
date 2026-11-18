@@ -203,7 +203,7 @@ they are.
 | home_team_id, away_team_id, neutral_site | | As in `schedule` |
 | home_pts, away_pts | DOUBLE | Each team's expected points |
 | poss | DOUBLE | Expected possessions per team |
-| home_win_prob | DOUBLE | The chance the home team wins: P(margin > 0) for a normal centered on the expected margin, with a standard deviation of 13.68 points, the model's error on 2021-2024 |
+| home_win_prob | DOUBLE | The chance the home team wins: P(margin > 0) for a normal centered on the expected margin, with a standard deviation of 13.66 points, the model's error on 2021-2024 |
 | as_of_date | DATE | The build's day: the prediction used the games before it |
 
 ```sql
@@ -266,7 +266,7 @@ before the game. Keyed by `season`, `model`, `game_id` and `created`.
 | game_date ... as_of_date | | As in `predictions` |
 
 `team` predictions use their own spread for `home_win_prob`, 13.93
-points, its error on 2021-2024; `rapm_pattern` uses `rapm`'s, 13.68.
+points, its error on 2021-2024; `rapm_pattern` uses `rapm`'s, 13.66.
 
 ```sql
 -- what was predicted for each finished game: the last row before tip-off

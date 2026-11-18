@@ -46,8 +46,10 @@ Daily refits, 2021-2024 (the scoreboard is kept in #24):
 | `rapm`, plain (`prior_weight=0`, actual minutes) | 13.71 | 0.620 | 18.40 | 4.57 | |
 | `rapm` with the box-score prior, actual minutes | 13.62 | 0.613 | 18.40 | 4.57 | |
 | `rapm` with the box-score prior, known availability | 13.58 | 0.613 | 18.35 | 4.57 | 4.73 |
-| `rapm` with aging (#48, the default), unknown availability | 13.68 | 0.623 | 18.43 | 4.57 | 6.24 |
-| `rapm` with aging (#48, the default), known availability | 13.54 | 0.612 | 18.35 | 4.57 | 4.73 |
+| `rapm` with aging (#48), unknown availability | 13.68 | 0.623 | 18.43 | 4.57 | 6.24 |
+| `rapm` with aging (#48), known availability | 13.54 | 0.612 | 18.35 | 4.57 | 4.73 |
+| `rapm` with aging and an early-season ridge (#50, the default), unknown availability | 13.66 | 0.623 | 18.44 | 4.57 | 6.24 |
+| `rapm` with aging and an early-season ridge (#50, the default), known availability | 13.52 | 0.611 | 18.35 | 4.57 | 4.73 |
 | `openrapm` (this season's: leaks, a ceiling; actual minutes) | 13.06 | 0.591 | 17.96 | 4.57 | |
 | closing line (5,132 games: knows injury news) | 13.40 | 0.609 | 18.00 | | |
 

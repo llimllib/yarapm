@@ -53,6 +53,21 @@ scores the same. Shifting the box-score prior along the curve as well
 (by the average age of the box scores it's made of) was worse, 13.605
 weekly against 13.549.
 
+Early in a season, the ridge toward the prior is larger (#50): `ridge` ×
+(1 + `loosen` × exp(−n / `loosen_games`)), n the teams' average games so
+far this season. So until this season's games arrive, the evidence
+carried over from earlier seasons counts for less, and a new season
+starts with every player pulled harder toward their prior. Without it,
+early predictions were spread too wide (the actual margin's slope on the
+predicted was 0.83 in the first 20 games, against 0.91-1.00 later). On
+the tuning seasons, daily, it lowers margin RMSE from 13.536 to 13.518
+(known availability, 2.3 paired SEs), early from 13.405 to 13.341, and
+the early slope rises to 0.95. A weekly grid of `loosen` 1-10 and
+`loosen_games` 5-60 is flat near the best (3-5 and 10-30 are within
+0.003). Scaling each team's strength toward the league's by 1 − a ×
+exp(−n / n0), a over 0.1-0.4 and n0 over 5-40 games, was a tie at best
+(−0.011 ± 0.007 weekly).
+
 The other defaults are the best of a grid on the tuning seasons (#8), weekly
 refits, by margin RMSE: half life 180-1460 calendar days, ridge 1000-30000, prior
 weight 0.7-1.6, box half life 180-730 and level half life 7-60. It's flat
@@ -76,6 +91,9 @@ from yarapm.tempo import PLAYOFF_TYPES, Tempo
 # the ridge of the plain RAPM the box-score prior is fit to, in possessions
 TARGET_RIDGE = 3000
 
+
+# the number of teams, for the average games played (`PlayerRatings.games`)
+TEAMS = 30
 
 # the aging curve's inputs: age clamped to AGE_RANGE, centered at AGE_CENTER
 AGE_RANGE = (19, 38)
@@ -203,6 +221,8 @@ class PlayerRatings:
         injuries: bool = True,
         aging: bool = True,
         aging_ridge: float = 1e4,
+        loosen: float = 3.0,
+        loosen_games: float = 20.0,
     ):
         self.half_life = half_life
         self.offseason = offseason
@@ -221,6 +241,8 @@ class PlayerRatings:
         )
         self.aging = aging
         self.aging_ridge = aging_ridge
+        self.loosen = loosen
+        self.loosen_games = loosen_games
         # the aging curves' coefficients, offense and defense, (2, 3)
         self.curve: np.ndarray | None = None
         self.ratings: rapm.Fit | None = None
@@ -263,10 +285,18 @@ class PlayerRatings:
                 | ({} if self.projection.use_injuries else {"injuries": False})
             )
             | ({"aging": True, "aging_ridge": self.aging_ridge} if self.aging else {})
+            | (
+                {"loosen": self.loosen, "loosen_games": self.loosen_games}
+                if self.loosen
+                else {}
+            )
         )
 
     def fit(self, history: History) -> None:
         self.projection.fit(history)
+        ridge = self.ridge
+        if self.loosen:
+            ridge *= 1 + self.loosen * np.exp(-self.games(history) / self.loosen_games)
         births = born(history) if self.aging else None
         rows, seasons, age, _ = lineups(
             history,
@@ -283,7 +313,7 @@ class PlayerRatings:
             defense = self.prior_weight * priors[:, 1]
         self.ratings = rapm.fit(
             rows,
-            self.ridge,
+            ridge,
             penalties(seasons, self.season_ridge, aging_ridge),
             offense,
             defense,
@@ -314,6 +344,16 @@ class PlayerRatings:
             np.asarray(r["min"], dtype=float),
             np.asarray(r["playoffs"], dtype=float),
         )
+
+    @staticmethod
+    def games(history: History) -> float:
+        """The teams' average number of games so far this season"""
+        (n,) = (
+            history.results.filter(f"season = {history.season}")
+            .aggregate("count(*)")
+            .fetchall()[0]
+        )
+        return 2 * n / TEAMS
 
     def target(self, history: History) -> tuple[rapm.Fit, list[int]]:
         """
@@ -387,8 +427,10 @@ class OpenRapm(PlayerRatings):
     def __init__(self, season: str = "last", **settings: Any):
         settings.setdefault("ridge", 1e9)
         settings.setdefault("prior_weight", 1)
-        # OpenRAPM's ratings are its own: they don't age
+        # OpenRAPM's ratings are its own: they don't age, and the ridge
+        # holds them whatever its size
         settings.setdefault("aging", False)
+        settings.setdefault("loosen", 0)
         super().__init__(**settings)
         self.season = season
         self.prior = OpenRapmPrior(season)
