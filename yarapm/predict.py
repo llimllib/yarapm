@@ -41,10 +41,10 @@ from yarapm.games import schedule_query
 from yarapm.harness import EASTERN, Game, History, Model, Prediction, load
 from yarapm.players import PlayerRatings
 
-# margin RMSE of each model's daily run on 2021-2024: rapm-93ea3652 (minutes
-# unknown) and team-2ac45b4a. `rapm_pattern` is `rapm` on those seasons,
-# which have no injury list
-SIGMA = {"rapm": 13.71, "rapm_pattern": 13.71, "team": 13.93}
+# margin RMSE of each model's daily run on 2021-2024: rapm-01e3ab77 (minutes
+# unknown, with aging, #48) and team-2ac45b4a. `rapm_pattern` is `rapm` on
+# those seasons, which have no injury list
+SIGMA = {"rapm": 13.68, "rapm_pattern": 13.68, "team": 13.93}
 
 
 def pattern_model() -> PlayerRatings:

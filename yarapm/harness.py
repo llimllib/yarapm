@@ -234,10 +234,10 @@ class History:
     @property
     def bio(self) -> duckdb.DuckDBPyRelation:
         """
-        Each player's height and draft position, which don't change: one
-        row per player, from their latest season in nba.player_season_stats.
-        That can be after the cutoff, but both are known before a player's
-        first game
+        Each player's height and draft position, which don't change, and
+        `born`, their season of birth (the season less their age then): one
+        row per player, from nba.player_season_stats. That can be after the
+        cutoff, but all three are known before a player's first game
         """
         return self.con.sql("FROM bio")
 
@@ -724,7 +724,8 @@ def load(con: duckdb.DuckDBPyConnection, out: Path = OUT) -> None:
         CREATE OR REPLACE TEMP TABLE bio AS
         SELECT player_id,
             arg_max(player_height_inches, season) AS height,
-            arg_max(draft_number, season) AS draft_number
+            arg_max(draft_number, season) AS draft_number,
+            mode(season - age) AS born
         FROM nba.player_season_stats
         WHERE season_type = 'regular_season'
         GROUP BY player_id

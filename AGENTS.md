@@ -23,7 +23,7 @@ Commands (tools come from `mise.toml`):
 - `yarapm/tempo.py`, `yarapm/baselines.py`: adjusted tempo, and the `home` and `team` models
 - `yarapm/rapm.py`: the sparse ridge RAPM solver (#6), pulling each player toward a prior
 - `yarapm/prior.py`: the box-score prior (#7) and OpenRAPM as a prior (#9)
-- `yarapm/players.py`: the `rapm` model (#8), ratings × minutes + tempo + home court, and `openrapm` (#9), OpenRAPM's ratings through the same step. The ratings age games in days of the season, skipping the breaks between them (`History.age()`, #43), so a summer doesn't move them
+- `yarapm/players.py`: the `rapm` model (#8), ratings × minutes + tempo + home court, and `openrapm` (#9), OpenRAPM's ratings through the same step. The ratings age games in days of the season, skipping the breaks between them (`History.age()`, #43), so a summer doesn't move them, except that players age along a curve learned in the same fit (#48)
 - `yarapm/minutes.py`: minutes for those models, `--set minutes=actual|known|unknown`. `actual` is the minutes played (`History.actual_minutes`, a leak that isolates rating error); `known` projects minutes given who played (`History.active`, a leak standing in for injury reports, #10), the default; `unknown` projects who plays too (#11), with ESPN's injury list (`History.injuries`, `nba.espn_injuries`, from 2026-11-12) setting the chance of playing for the players on it (#45): the latest list fetched before `History.as_of` (by default the cutoff day's first tip-off; `publish build` passes its `now`). No list, as in every season before 2027, changes nothing. Projected minutes are scored as `minutes_mae`
 - `yarapm/predict.py`: predictions for games not yet played (#26), from `nba.schedule` (`yarapm.games.schedule_query`). The live models are `rapm` with unknown availability, `rapm_pattern` (the same without the injury list, only logged, to measure it: #46) and `team`; win probability uses a fixed spread, each model's margin RMSE on the tuning seasons (`SIGMA`). A fresh fit for a day matches the harness's daily prediction for it
 - `yarapm/strength.py`: team ratings at full strength and today (#31), from the player model's ratings and minutes; `publish` writes them as `team_ratings_daily` and `team_players_daily`
@@ -46,6 +46,8 @@ Daily refits, 2021-2024 (the scoreboard is kept in #24):
 | `rapm`, plain (`prior_weight=0`, actual minutes) | 13.71 | 0.620 | 18.40 | 4.57 | |
 | `rapm` with the box-score prior, actual minutes | 13.62 | 0.613 | 18.40 | 4.57 | |
 | `rapm` with the box-score prior, known availability | 13.58 | 0.613 | 18.35 | 4.57 | 4.73 |
+| `rapm` with aging (#48, the default), unknown availability | 13.68 | 0.623 | 18.43 | 4.57 | 6.24 |
+| `rapm` with aging (#48, the default), known availability | 13.54 | 0.612 | 18.35 | 4.57 | 4.73 |
 | `openrapm` (this season's: leaks, a ceiling; actual minutes) | 13.06 | 0.591 | 17.96 | 4.57 | |
 | closing line (5,132 games: knows injury news) | 13.40 | 0.609 | 18.00 | | |
 

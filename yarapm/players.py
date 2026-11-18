@@ -38,6 +38,21 @@ chosen so that a player's rating doesn't drop over a summer with no
 games. 240 days, about one season, keeps about the memory of 365
 calendar days.
 
+With `aging` (#48), players age: their rating in an earlier season was
+their rating now less the change in an aging curve (offense and defense,
+each a cubic in age, `age_basis`) between their age then and now. The
+curve's six coefficients are covariates of the same fit, penalized by
+`aging_ridge`, so it's learned from how players' ratings moved between
+the seasons in the fit, and each rating is the player's as of this
+season. Only how players age relative to each other is identified: a
+change shared by everyone goes to the season offsets. On the tuning
+seasons it lowers daily margin RMSE from 13.570 to 13.536 (known
+availability), most early in the season (13.475 to 13.405), where the
+ratings are mostly last season's. `aging_ridge` from 1000 to 100000
+scores the same. Shifting the box-score prior along the curve as well
+(by the average age of the box scores it's made of) was worse, 13.605
+weekly against 13.549.
+
 The other defaults are the best of a grid on the tuning seasons (#8), weekly
 refits, by margin RMSE: half life 180-1460 calendar days, ridge 1000-30000, prior
 weight 0.7-1.6, box half life 180-730 and level half life 7-60. It's flat
@@ -62,14 +77,61 @@ from yarapm.tempo import PLAYOFF_TYPES, Tempo
 TARGET_RIDGE = 3000
 
 
+# the aging curve's inputs: age clamped to AGE_RANGE, centered at AGE_CENTER
+AGE_RANGE = (19, 38)
+AGE_CENTER = 27
+
+
+def age_basis(age: np.ndarray) -> np.ndarray:
+    """
+    The aging curve's basis, (..., 3): a cubic in age, so a player's rating
+    changes by an amount that is quadratic in their age from one season to
+    the next
+    """
+    a = np.clip(age, *AGE_RANGE) - AGE_CENTER
+    return np.stack([a, a**2 / 10, a**3 / 100], axis=-1)
+
+
+def born(history: History) -> dict[str, float]:
+    """Each player's season of birth: the season they were 0 years old"""
+    return {
+        p: float(b)
+        for p, b in history.bio.select("player_id, born").fetchall()
+        if b is not None
+    }
+
+
+def aging_covariates(
+    rows: rapm.Lineups, season: np.ndarray, born: dict[str, float], now: int
+) -> np.ndarray:
+    """
+    Six columns, the aging curve's for offense then defense: in a row from
+    an earlier season, each player was younger than they are in season
+    `now`, and their rating then was their rating now less the change in
+    the curve between the two ages. Players without an age don't age
+    """
+    b = np.array([born.get(p, np.nan) for p in rows.players])
+    off = age_basis(now - b[rows.off]) - age_basis(season[:, None] - b[rows.off])
+    dfn = age_basis(now - b[rows.dfn]) - age_basis(season[:, None] - b[rows.dfn])
+    off = np.nan_to_num(off).sum(axis=1)
+    dfn = np.nan_to_num(dfn).sum(axis=1)
+    return np.c_[-off, dfn]
+
+
 def lineups(
-    history: History, half_life: float, where: str = "true", offseason: bool = True
+    history: History,
+    half_life: float,
+    where: str = "true",
+    offseason: bool = True,
+    aging: dict[str, float] | None = None,
 ) -> tuple[rapm.Lineups, list[int], np.ndarray, np.ndarray]:
     """
     The segments matching `where` that still carry weight, with covariates:
-    an intercept, one column per season, home and playoffs. Returns the
-    seasons, each row's age in days, and its age for weighting: the same,
-    or with `offseason` false, without the breaks between seasons
+    an intercept, one column per season, home and playoffs, and with
+    `aging` (each player's season of birth), the aging curve's
+    (`aging_covariates`). Returns the seasons, each row's age in days, and
+    its age for weighting: the same, or with `offseason` false, without the
+    breaks between seasons
     """
     types = ", ".join(f"'{t}'" for t in PLAYOFF_TYPES)
     t = (
@@ -101,12 +163,23 @@ def lineups(
         decay(weight_age, half_life),
         covariates,
     )
+    if aging is not None and len(season):
+        now = history.season if history.season is not None else max(seasons)
+        rows.covariates = np.c_[
+            rows.covariates, aging_covariates(rows, season, aging, now)
+        ]
     return rows, seasons, age, weight_age
 
 
-def penalties(seasons: list[int], season_ridge: float) -> np.ndarray:
-    """The covariates': only the season offsets are penalized"""
-    return np.r_[0, np.full(len(seasons), season_ridge), 0, 0]
+def penalties(
+    seasons: list[int], season_ridge: float, aging_ridge: float | None = None
+) -> np.ndarray:
+    """
+    The covariates': the season offsets are penalized, and with
+    `aging_ridge`, the aging curve's
+    """
+    aging = [] if aging_ridge is None else [aging_ridge] * 6
+    return np.r_[0, np.full(len(seasons), season_ridge), 0, 0, aging]
 
 
 class PlayerRatings:
@@ -128,6 +201,8 @@ class PlayerRatings:
         offseason: bool = False,
         box_offseason: bool = True,
         injuries: bool = True,
+        aging: bool = True,
+        aging_ridge: float = 1e4,
     ):
         self.half_life = half_life
         self.offseason = offseason
@@ -144,6 +219,10 @@ class PlayerRatings:
             if minutes == "actual"
             else ProjectedMinutes(minutes, minutes_half_life, start_bonus, injuries)
         )
+        self.aging = aging
+        self.aging_ridge = aging_ridge
+        # the aging curves' coefficients, offense and defense, (2, 3)
+        self.curve: np.ndarray | None = None
         self.ratings: rapm.Fit | None = None
         self.level = 0.0
         self.home = 0.0
@@ -183,13 +262,19 @@ class PlayerRatings:
                 # only when false, so runs from before #46 keep their ids
                 | ({} if self.projection.use_injuries else {"injuries": False})
             )
+            | ({"aging": True, "aging_ridge": self.aging_ridge} if self.aging else {})
         )
 
     def fit(self, history: History) -> None:
         self.projection.fit(history)
+        births = born(history) if self.aging else None
         rows, seasons, age, _ = lineups(
-            history, max(self.half_life, self.level_half_life), offseason=self.offseason
+            history,
+            max(self.half_life, self.level_half_life),
+            offseason=self.offseason,
+            aging=births,
         )
+        aging_ridge = self.aging_ridge if self.aging else None
         offense = defense = None
         if self.prior_weight:
             self.prior.fit(history, lambda: self.target(history))
@@ -199,13 +284,15 @@ class PlayerRatings:
         self.ratings = rapm.fit(
             rows,
             self.ridge,
-            penalties(seasons, self.season_ridge),
+            penalties(seasons, self.season_ridge, aging_ridge),
             offense,
             defense,
             start=self.ratings,
         )
         coef = self.ratings.coef
-        self.home, self.playoffs = coef[-2], coef[-1]
+        self.home, self.playoffs = coef[1 + len(seasons)], coef[2 + len(seasons)]
+        if self.aging:
+            self.curve = coef[-6:].reshape(2, 3)
 
         # the league average: what the ratings, home court and the playoff
         # term leave over, recent games weighing more
@@ -300,6 +387,8 @@ class OpenRapm(PlayerRatings):
     def __init__(self, season: str = "last", **settings: Any):
         settings.setdefault("ridge", 1e9)
         settings.setdefault("prior_weight", 1)
+        # OpenRAPM's ratings are its own: they don't age
+        settings.setdefault("aging", False)
         super().__init__(**settings)
         self.season = season
         self.prior = OpenRapmPrior(season)

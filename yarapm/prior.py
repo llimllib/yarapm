@@ -124,7 +124,8 @@ class Bio:
     @classmethod
     def load(cls, history: History) -> Bio:
         bio = cls()
-        for player, height, draft in history.bio.fetchall():
+        rows = history.bio.select("player_id, height, draft_number").fetchall()
+        for player, height, draft in rows:
             if height is not None:
                 bio.height[player] = float(height)
             if draft is not None:

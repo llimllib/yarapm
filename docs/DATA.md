@@ -71,9 +71,11 @@ they're what a prediction on that day would use. Players are those on a
 team's roster as of the day (see `minutes`) or with possessions this
 season. There are no rows for the offseason. Games age only during a
 season (the days between seasons don't count), so the summer doesn't pull
-ratings toward their priors. A new season's first day can still move
-them: its box-score formula is refit with the season just finished, and
-the day's ratings are centered on new lineups (below).
+ratings toward their priors. A new season's first day does move them:
+players age a year, along a curve the model learns from how ratings
+changed with age in earlier seasons (young players rise, veterans
+fall), the box-score formula is refit with the season just finished,
+and the day's ratings are centered on new lineups (below).
 
 The model's ratings have no fixed zero: adding a constant to every
 player's offense (or defense) changes no prediction, since the league
@@ -201,7 +203,7 @@ they are.
 | home_team_id, away_team_id, neutral_site | | As in `schedule` |
 | home_pts, away_pts | DOUBLE | Each team's expected points |
 | poss | DOUBLE | Expected possessions per team |
-| home_win_prob | DOUBLE | The chance the home team wins: P(margin > 0) for a normal centered on the expected margin, with a standard deviation of 13.71 points, the model's error on 2021-2024 |
+| home_win_prob | DOUBLE | The chance the home team wins: P(margin > 0) for a normal centered on the expected margin, with a standard deviation of 13.68 points, the model's error on 2021-2024 |
 | as_of_date | DATE | The build's day: the prediction used the games before it |
 
 ```sql
@@ -264,7 +266,7 @@ before the game. Keyed by `season`, `model`, `game_id` and `created`.
 | game_date ... as_of_date | | As in `predictions` |
 
 `team` predictions use their own spread for `home_win_prob`, 13.93
-points, its error on 2021-2024; `rapm_pattern` uses `rapm`'s, 13.71.
+points, its error on 2021-2024; `rapm_pattern` uses `rapm`'s, 13.68.
 
 ```sql
 -- what was predicted for each finished game: the last row before tip-off

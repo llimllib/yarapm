@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from yarapm.harness import Game, History
-from yarapm.players import PlayerRatings
+from yarapm.players import PlayerRatings, age_basis
 from yarapm.predict import live_models
 
 TEAMS = {t: [f"{t}{i}" for i in range(6)] for t in "ABCD"}
@@ -32,17 +32,18 @@ def efficiency(offense, defense, off_players, def_players, home):
     )
 
 
-def tables(con, offense, defense, seed=2):
+def tables(con, offense, defense, seed=2, season=2024, create=True):
     """
     `results`, `all_segments` and `player_games` for a season of games between every pair of teams, each in ten segments of random
-    lineups scoring exactly their expected points
+    lineups scoring exactly their expected points. With `create` false,
+    the season is added to the tables
     """
     rng = np.random.default_rng(seed)
     results, segments, players = [], [], []
-    start = date(2023, 11, 1)
+    start = date(season - 1, 11, 1)
     games = [pair for _ in range(3) for pair in permutations(TEAMS, 2)]
     for i, (team, opp) in enumerate(games):
-        game_id, day = f"g{i:03}", start + timedelta(days=i)
+        game_id, day = f"g{season}{i:03}", start + timedelta(days=i)
         minutes: dict[str, float] = {}
         for seg in range(10):
             on = {
@@ -54,7 +55,7 @@ def tables(con, offense, defense, seed=2):
                 eff = efficiency(offense, defense, on[off], on[dfn], home)
                 segments.append(
                     (
-                        2024,
+                        season,
                         game_id,
                         day,
                         "regular_season",
@@ -68,11 +69,22 @@ def tables(con, offense, defense, seed=2):
                     )
                 )
         results.append(
-            (2024, game_id, day, "regular_season", team, opp, True, 100, 100)
+            (season, game_id, day, "regular_season", team, opp, True, 100, 100)
         )
         for p, m in minutes.items():
-            players.append((2024, game_id, day, p[0], p, m))
+            players.append((season, game_id, day, p[0], p, m))
 
+    if not create:
+        con.executemany(
+            "INSERT INTO results VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 48)",
+            results,
+        )
+        con.executemany(
+            "INSERT INTO all_segments VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            segments,
+        )
+        con.executemany("INSERT INTO player_games VALUES (?, ?, ?, ?, ?, ?)", players)
+        return
     con.execute("""CREATE TEMP TABLE results (season INTEGER, game_id VARCHAR,
         game_date DATE, game_type VARCHAR, team_id VARCHAR, opp_team_id VARCHAR,
         home BOOLEAN, poss DOUBLE, opp_poss DOUBLE)""")
@@ -104,6 +116,7 @@ def test_predicts_from_ratings_and_minutes():
         tempo_half_life=1e9,
         tempo_ridge=1e-6,
         minutes="actual",
+        aging=False,
     )
     model.fit(History(con, date(2024, 6, 1), 2024))
     assert model.home == pytest.approx(HOME, abs=1e-4)
@@ -141,3 +154,54 @@ def test_injuries_setting_keeps_run_ids():
     pattern = models["rapm_pattern"]
     assert pattern.name == "rapm_pattern" and models["rapm"].name == "rapm"
     assert pattern.settings == models["rapm"].settings | {"injuries": False}
+
+
+def test_aging_carries_ratings_to_this_season():
+    """
+    Players aged along a curve between 2023 and 2024: with `aging`, a fit
+    on both seasons rates them as they are in 2024
+    """
+    now_off, now_def = ratings()
+    rng = np.random.default_rng(3)
+    born = {p: float(rng.integers(1985, 2004)) for p in now_off}
+    curve = np.array([[0.3, -0.4, 0.2], [0.1, 0.2, 0.0]])
+
+    def then(now, side):
+        return {
+            p: r
+            - (
+                age_basis(np.array(2024 - born[p]))
+                - age_basis(np.array(2023 - born[p]))
+            )
+            @ curve[side]
+            for p, r in now.items()
+        }
+
+    con = duckdb.connect()
+    tables(con, now_off, now_def)
+    tables(con, then(now_off, 0), then(now_def, 1), seed=4, season=2023, create=False)
+    con.execute("CREATE TEMP TABLE bio (player_id VARCHAR, born DOUBLE)")
+    con.executemany("INSERT INTO bio VALUES (?, ?)", list(born.items()))
+
+    def fit(aging):
+        model = PlayerRatings(
+            half_life=1e9,
+            ridge=1e-6,
+            season_ridge=1,
+            level_half_life=1e9,
+            prior_weight=0,
+            tempo_half_life=1e9,
+            tempo_ridge=1e-6,
+            minutes="actual",
+            aging=aging,
+            aging_ridge=1e-6,
+        )
+        model.fit(History(con, date(2024, 6, 1), 2024))
+        assert model.ratings is not None
+        # ratings are identified up to a shift: compare them centered
+        got = np.array([model.ratings.rating(p) for p in now_off])
+        want = np.array([(now_off[p], now_def[p]) for p in now_off])
+        return np.abs((got - got.mean(0)) - (want - want.mean(0))).max()
+
+    assert fit(aging=True) == pytest.approx(0, abs=1e-3)
+    assert fit(aging=False) > 0.05
