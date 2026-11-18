@@ -183,6 +183,48 @@ older season's evidence a fixed fraction toward the prior, a regression
 to the mean on top of the aging, gained 0.006, within the noise.
 :::
 
+## A slower start {#sec:loosen}
+
+Aging moved the early slope from 0.77 to 0.83, short of the line's 0.92.
+What's left is about how much to trust last season at all. On opening
+night every rating is last season's evidence, decayed and aged, and
+nothing from this season can contradict it yet. A summer of trades,
+injuries and development the model can't see makes that evidence less
+reliable than its possession count says, so early in a season it should
+count for less against the prior than it will later, when this season's
+games have arrived to check it.
+
+::: {.definition #def:loosen title="Early-season penalty"}
+In a fit made after the teams have played $n$ games each this season, on
+average, the ridge penalty of @eq:ridge is
+$$
+\lambda_n = \lambda \left(1 + 3\,e^{-n/20}\right).
+$$ {#eq:loosen}
+:::
+
+On opening night the penalty is four times its usual 3,000 possessions;
+after 20 games, 2.1 times; after 40, 1.4; by the trade deadline, around
+game 55, 1.2. Every player is pulled harder toward their prior at the
+start of a season, and the pull relaxes as the season goes on. It acts
+on players, not teams: a player with several seasons of evidence keeps
+more of it than one with a few hundred possessions, as
+@eq:shrinkage says.
+
+::: {.example #ex:loosen}
+On 2021–2024, with daily refits and who plays known, @eq:loosen lowered
+the margin RMSE from 13.536 to 13.518, a little more than two standard
+errors, and from 13.405 to 13.341 before either team's 20th game, with
+the other phases unchanged. The early slope rose from 0.83 to 0.95. The
+3 and the 20 were picked from a grid on weekly refits, and the grid is
+flat near them: 3 to 5 and 10 to 30 games all scored within 0.005 of
+the best. Picked on 2021–2022 alone, a setting still helped on
+2023–2024, by half to two thirds as much, though that alone is within
+the noise. Shrinking each team's predicted strength toward the
+league's early in the season, instead of each player's rating toward
+their prior, moved the slope as far but gained only 0.011, within the
+noise.
+:::
+
 ## The league's level {#sec:level}
 
 Players aren't the only things that change. @fig:league showed the

@@ -26,9 +26,9 @@ error* is $\sqrt{\frac1N \sum e_g^2}$.
 The RMSE is the headline number: it punishes large misses more than
 small ones, and it's what the regression minimizes. Over the 5,133 games
 of 2021–2024, predicted the way the model is used, from the games before
-each day and guessing who will play, the margin RMSE is 13.68 points,
-the mean absolute error 10.74 and the bias $-0.18$. For totals the RMSE
-is 18.43.
+each day and guessing who will play, the margin RMSE is 13.66 points,
+the mean absolute error 10.72 and the bias $-0.18$. For totals the RMSE
+is 18.44.
 
 ## From a margin to a probability
 
@@ -43,22 +43,22 @@ $$
 \Pr(M > 0) = \Phi\!\left(\frac{\hat M}{\sigma}\right),
 $$ {#eq:win-prob}
 where $\Phi$ is the standard normal distribution function, and $\sigma$
-is the model's margin RMSE on the tuning seasons, 13.68 points.^[$\Phi(z)
+is the model's margin RMSE on the tuning seasons, 13.66 points.^[$\Phi(z)
 = \int_{-\infty}^z e^{-t^2/2}\,dt/\sqrt{2\pi}$ is the probability that a
 standard normal is at most $z$; if $M \sim N(\mu, \sigma^2)$ then $(M -
 \mu)/\sigma$ is standard normal, so $\Pr(M > 0) = \Pr\!\left(\frac{M -
 \mu}{\sigma} > -\frac{\mu}{\sigma}\right) = \Phi(\mu/\sigma)$.]
 :::
 
-For Game 5, $\Phi(6.8/13.68) = \Phi(0.50) = 0.69$. Is the normal
+For Game 5, $\Phi(6.8/13.66) = \Phi(0.50) = 0.69$. Is the normal
 assumption any good? @fig:errors compares the errors with a normal curve
-of the same spread. They fit well: 30.2% of games miss by more than one
+of the same spread. They fit well: 30.3% of games miss by more than one
 $\sigma$, against 31.7% for a normal, and 4.6% by more than two, against
 4.55%.
 
 ![The distribution of the error in the predicted margin, 2021–2024, in
 4-point bins, and a normal density with the same standard deviation,
-13.68 points.](figures/errors.svg){#fig:errors}
+13.66 points.](figures/errors.svg){#fig:errors}
 
 ## Scoring probabilities
 
@@ -89,7 +89,7 @@ The most direct check of the probabilities is *calibration*: of the
 games it gave the home team a 70–80% chance, the home team should win
 about 75%. @fig:calibration groups the games by predicted probability.
 Every group is within its sampling error of the diagonal, and overall,
-the favorite won 65.1% of the games, where the model expected 64.2%.
+the favorite won 65.5% of the games, where the model expected 63.7%.
 
 ![Calibration on 2021–2024: the games grouped by the predicted chance
 that the home team wins, in tenths, plotted at the group's average
@@ -107,8 +107,8 @@ that set the bar.
 | home court only | 14.98 | 0.687 | 19.97 |
 | team ratings | 13.93 | 0.636 | 18.73 |
 | last season's OpenRAPM, who plays guessed | 14.03 | 0.637 | 18.60 |
-| player ratings, who plays guessed | **13.68** | **0.623** | **18.43** |
-| player ratings, who plays known | 13.54 | 0.612 | 18.35 |
+| player ratings, who plays guessed | **13.66** | **0.623** | **18.44** |
+| player ratings, who plays known | 13.52 | 0.611 | 18.35 |
 | this season's OpenRAPM (a ceiling) | 13.10 | 0.592 | 17.92 |
 
 Table: Daily walk-forward results on the 2021–2024 seasons, 5,133
@@ -132,7 +132,7 @@ products.^[OpenRAPM's ratings are in nba_data's catalog as
 
 The numbers also vary by the phase of the season. Early, when either
 team has played fewer than 20 games and rosters are new, the margin RMSE
-is 13.54; in mid-season 13.57; after the trade deadline 13.73; in the
+is 13.45; in mid-season 13.57; after the trade deadline 13.73; in the
 playoffs 14.52. The playoffs are where the model is weakest: it
 underrates home teams by 2.4 points of margin and overpredicts totals by
 1.3, both open questions in the project.
@@ -172,7 +172,7 @@ those two seasons' games were less predictable: the standard deviation
 of the margin itself was 16.0 and 16.5 points, against 13.7 to 15.7 in the
 tuning seasons. But the order held, and the player model's margin RMSE
 stayed ahead of team ratings, by less than in the tuning seasons. These
-are the model as it was then, before aging (@sec:aging): the held-out
+are the model as it was then, before aging and the early-season penalty (@sec:aging, @sec:loosen): the held-out
 seasons were scored once, and aren't scored again as the model changes,
 or they would become tuning seasons too.
 
@@ -211,7 +211,7 @@ is minimized at $q = p$. Do the same for the Brier score.
 :::
 
 ::: {.exercise #exr:sigma}
-Suppose the model used $\sigma = 10$ in @eq:win-prob instead of 13.68,
+Suppose the model used $\sigma = 10$ in @eq:win-prob instead of 13.66,
 with the same predicted margins. Which way would @fig:calibration's points
 move? Would the log loss go up or down? Why?
 :::

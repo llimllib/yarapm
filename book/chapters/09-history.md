@@ -57,6 +57,9 @@ time, and most at the start, when each game is a larger share of what's
 new. Between seasons it can jump, because the box-score formula is refit
 on opening night (@ch:prior), and because every player gets a year
 older (@sec:aging), which moves young players up and older ones down.
+And early in a season every rating is pulled harder toward its prior
+(@sec:loosen), so it starts a season closer to the prior and moves away
+from it again over the first few months.
 And the defensive line is the flatter one, which is true of the ratings
 generally: among 2026's regulars, the published defensive ratings have a standard deviation of 1.5 against
 offense's 1.8. Defense leaves less of a trace in the box score and in the

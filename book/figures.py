@@ -814,7 +814,9 @@ def aging() -> Svg:
     ).fetchall()[0]
     moved = {}
     for aging in (False, True):
-        m = PlayerRatings(minutes="unknown", aging=aging)
+        # without the early-season ridge (#50), which pulls every rating
+        # toward its prior on opening night, so the move is aging's alone
+        m = PlayerRatings(minutes="unknown", aging=aging, loosen=0)
         m.fit(History(con, last, 2025))
         assert m.ratings is not None
         before = m.ratings
@@ -1142,8 +1144,9 @@ def availability_curves() -> Svg:
 
 # the daily `rapm` run with unknown availability on 2021-2024, the
 # scoreboard's (yarapm.harness --model rapm --cadence daily --set
-# minutes=unknown), with aging (#48) and segments from 2010 on
-RUN = ROOT / "out" / "runs" / "predictions" / "run=rapm-01e3ab77" / "data.parquet"
+# minutes=unknown), with aging (#48), the early-season ridge (#50) and
+# segments from 2010 on
+RUN = ROOT / "out" / "runs" / "predictions" / "run=rapm-6833e941" / "data.parquet"
 
 
 def run_errors():

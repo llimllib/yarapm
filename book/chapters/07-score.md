@@ -132,8 +132,8 @@ it, and it can't be tested on them: its record is the live one
 
 This is the weakest part of the model, and the scoreboard shows it.
 When the harness is allowed to know who actually played, standing in
-for an injury report, the margin RMSE on 2021–2024 is 13.54; guessing,
-as it must for real predictions, it's 13.68. Knowing who plays is worth
+for an injury report, the margin RMSE on 2021–2024 is 13.52; guessing,
+as it must for real predictions, it's 13.66. Knowing who plays is worth
 more than the box-score prior.
 
 ## How many possessions

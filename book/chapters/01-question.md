@@ -138,8 +138,8 @@ and they play in groups of five.
 |:--|--:|--:|
 | home court only | 14.98 | 0.687 |
 | team ratings (`team`) | 13.93 | 0.636 |
-| player ratings, who plays guessed | 13.68 | 0.623 |
-| player ratings, who plays known | 13.54 | 0.612 |
+| player ratings, who plays guessed | 13.66 | 0.623 |
+| player ratings, who plays known | 13.52 | 0.611 |
 
 Table: How far off each model's predicted margin is, in points (the
 root mean square error, @ch:evaluation), and its log loss on win
