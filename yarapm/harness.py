@@ -141,6 +141,19 @@ class InjuryList(NamedTuple):
     next_games: dict[str, tuple[str, date]]
 
 
+class Report(NamedTuple):
+    """
+    The NBA's official injury report as of one report: each listed player's
+    status and reason by (game_id, player_id), and the (game_id, team_id)s
+    of the teams in it. A team that hadn't submitted has no rows, so it
+    isn't in `teams`, and its players' absence says nothing
+    """
+
+    report_time: datetime  # UTC, naive
+    players: dict[tuple[str, str], tuple[str, str | None]]
+    teams: dict[tuple[str, str], date]
+
+
 def table_exists(con: duckdb.DuckDBPyConnection, name: str) -> bool:
     """Whether temp table `name` has been made"""
     return bool(
@@ -157,8 +170,8 @@ class History:
     `season`. Every table a model reads goes through here, filtered on
     `game_date`.
 
-    `as_of` is when the fit is made, for the injury list (`injuries`): the
-    latest list fetched before it. By default it's the first tip-off on
+    `as_of` is when the fit is made, for the injury list (`injuries`) and
+    report (`injury_report`): the latest before it. By default it's the first tip-off on
     the cutoff day, or with no games that day, the end of the day (US
     Eastern), so a fit for a past day uses the list its games had
     """
@@ -342,6 +355,33 @@ class History:
             ).fetchall()
             next_games = {team: (game, day) for team, game, day in rows}
         return InjuryList(fetched, players, next_games)
+
+    def injury_report(self) -> Report | None:
+        """
+        The NBA's injury report (nba.injury_report) as of `as_of`: its
+        latest report before then in the season, or None if there's none
+        (before December 17, 2018, and whenever `load` hasn't loaded it)
+        """
+        if not table_exists(self.con, "injury_report"):
+            return None
+        season = "true" if self.season is None else f"season = {int(self.season)}"
+        (when,) = self.con.execute(
+            f"""SELECT max(report_time) FROM injury_report
+            WHERE {season} AND report_time < ?""",
+            [self.as_of],
+        ).fetchall()[0]
+        if when is None:
+            return None
+        rows = self.con.execute(
+            """SELECT game_id, team_id, game_date, player_id, status, reason
+            FROM injury_report WHERE report_time = ?""",
+            [when],
+        ).fetchall()
+        return Report(
+            when,
+            {(g, p): (status, reason) for g, _, _, p, status, reason in rows},
+            {(g, t): d for g, t, d, *_ in rows},
+        )
 
     def rest(self, game_ids: list[str]) -> dict[tuple[str, str], int | None]:
         """
@@ -729,8 +769,9 @@ def rmse(errors: np.ndarray) -> float | None:
 def load(con: duckdb.DuckDBPyConnection, out: Path = OUT) -> None:
     """
     The tables `History` reads: `results`, `player_games`, `bio`,
-    `openrapm`, `injuries` (ESPN's injury lists), `schedule`
-    (`yarapm.games.schedule_query`), `rest` (`load_rest`), and `all_segments` if built; and
+    `openrapm`, `injuries` (ESPN's injury lists), `injury_report` (the
+    NBA's), `schedule` (`yarapm.games.schedule_query`), `rest`
+    (`load_rest`), and `all_segments` if built; and
     `lines`, for scoring
     """
     load_results(con)
@@ -772,6 +813,12 @@ def load(con: duckdb.DuckDBPyConnection, out: Path = OUT) -> None:
         SELECT season, timezone('UTC', fetched_at) AS fetched_at, team_id,
             player_id, status, fantasy_status, return_date
         FROM nba.espn_injuries
+    """)
+    con.execute("""
+        CREATE OR REPLACE TEMP TABLE injury_report AS
+        SELECT season, timezone('UTC', report_time) AS report_time, game_id,
+            game_date, team_id, player_id, status, reason
+        FROM nba.injury_report
     """)
     con.execute(f"CREATE OR REPLACE TEMP TABLE schedule AS {schedule_query()}")
     load_rest(con)

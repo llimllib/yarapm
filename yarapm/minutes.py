@@ -26,14 +26,33 @@ of the team's last ROSTER_GAMES games and haven't played for another team
 since. Players who change teams in the offseason or in a trade aren't on
 their new team's roster until they've played for it.
 
-The injury list (#45): a player on the roster who's on ESPN's injury list
-(`History.injuries`, from November 12, 2026) gets a chance of playing from
-their listed status instead (`injury_chance`), in their team's next game
-after the list was fetched and its later games before the entry's return
-date. In the team's other games, the pattern's chance comes back: the list
-says nothing about next week. With no list, as for every season before
-2027, nothing changes. Coming off the list doesn't add a player to the
-roster: one back from a long absence isn't on it.
+The injury report (#52): in a game the NBA's injury report covers
+(`History.injury_report`, the latest report before `History.as_of`, from
+December 2018) for a team that filed, a player on the roster gets a chance
+of playing from it instead (`report_availability`): by their status if
+they're listed, and by their spot if they aren't, from how often players
+in the same spot played when their team filed without them. Both are fit
+on the same seasons as the pattern, from each game's last report before
+its day's first tip-off, with the same half-game prior toward even. A
+report covers its day's games and the next day's, so a week's later games
+keep the pattern's chance. A team that hadn't filed (`NOT YET SUBMITTED`)
+has no rows, so its players keep the pattern's chance too.
+
+On the tuning seasons, daily, it lowers margin RMSE from 13.630 to 13.505
+(−0.125 ± 0.024 paired), against 13.500 with who plays known, and minutes
+MAE from 6.24 to 5.13. Fit on the 2019-2023 reports, the chances by status
+were about: Out 0.006, Doubtful 0.04, Questionable 0.50, Probable 0.89,
+Available 0.83.
+
+The injury list (#45): in a game the report doesn't cover for the team, a
+player on the roster who's on ESPN's injury list (`History.injuries`, from
+November 12, 2026) gets a chance of playing from their listed status
+instead (`injury_chance`), in their team's next game after the list was
+fetched and its later games before the entry's return date. In the team's
+other games, the pattern's chance comes back: the list says nothing about
+next week. With no list, as for every season before 2027, nothing changes.
+Coming off the report or the list doesn't add a player to the roster: one
+back from a long absence isn't on it.
 
 A team's minutes are scaled to 240, with no player above CAP (the excess
 goes to the others in proportion). With unknown availability, each player
@@ -47,7 +66,7 @@ start bonuses of 0-10. Margin RMSE moved by 0.03 at most over the grid.
 from collections import defaultdict
 from datetime import date
 
-from yarapm.harness import Game, History, Injury, InjuryList
+from yarapm.harness import Game, History, Injury, InjuryList, Report, table_exists
 
 TEAM_MINUTES = 240
 CAP = 42
@@ -119,6 +138,7 @@ class ProjectedMinutes:
         half_life: float = 5,
         start_bonus: float = 5,
         injuries: bool = True,
+        report: bool = True,
     ):
         if availability not in ("known", "unknown"):
             raise ValueError(f"availability {availability!r} is 'known' or 'unknown'")
@@ -128,6 +148,12 @@ class ProjectedMinutes:
         # whether unknown availability reads the injury list: false is the
         # pattern alone, logged live to measure the list (#46)
         self.use_injuries = injuries
+        # whether unknown availability reads the NBA's injury report (#52):
+        # false, with `injuries` false too, is the pattern alone
+        self.use_report = report
+        self.report: Report | None = None
+        self.status_chances: dict[str, float] = {}
+        self.unlisted_chances: dict[tuple[int, int], float] = {}
         self.playing: dict[str, float] = {}
         self.chances: dict[tuple[int, int], float] = {}
         self.chances_season: int | None = None
@@ -140,9 +166,14 @@ class ProjectedMinutes:
         if self.availability == "unknown":
             if not self.chances or history.season != self.chances_season:
                 self.chances = availability(history)
+                if self.use_report:
+                    self.status_chances, self.unlisted_chances = report_availability(
+                        history
+                    )
                 self.chances_season = history.season
             self.rosters = rosters(history)
             self.injuries = history.injuries() if self.use_injuries else None
+            self.report = history.injury_report() if self.use_report else None
 
     def when_playing(self, history: History) -> dict[str, float]:
         """Each player's projected minutes if they play"""
@@ -200,9 +231,21 @@ class ProjectedMinutes:
         With unknown availability, the chance each player on a roster plays
         in `game`, or with no game, in the team's next one
         """
-        chances = {
-            p: self.chance(*spot) for p, spot in self.rosters.get(team, {}).items()
-        }
+        roster = self.rosters.get(team, {})
+        chances = {p: self.chance(*spot) for p, spot in roster.items()}
+        reported = self.reported_game(team, game)
+        if reported is not None:
+            assert self.report is not None
+            for p, spot in roster.items():
+                entry = self.report.players.get((reported, p))
+                chance = (
+                    self.unlisted_chances.get(spot)
+                    if entry is None
+                    else self.status_chances.get(entry[0])
+                )
+                if chance is not None:
+                    chances[p] = chance
+            return chances
         if self.injuries is None:
             return chances
         for p in chances:
@@ -213,6 +256,22 @@ class ProjectedMinutes:
             if chance is not None:
                 chances[p] = chance
         return chances
+
+    def reported_game(self, team: str, game: Game | None) -> str | None:
+        """
+        The game_id of `game`, or with no game, of the team's next one, if
+        the team is in the injury report for it
+        """
+        if self.report is None:
+            return None
+        if game is not None:
+            return game.game_id if (game.game_id, team) in self.report.teams else None
+        listed = [
+            (d, g)
+            for (g, t), d in self.report.teams.items()
+            if t == team and d >= self.history.cutoff
+        ]
+        return min(listed)[1] if listed else None
 
     def listed_for(self, team: str, injury: Injury, game: Game | None) -> bool:
         """
@@ -295,6 +354,80 @@ def availability(history: History) -> dict[tuple[int, int], float]:
     """).fetchall()
     # a half a game's prior toward even, for spots seen rarely
     return {(since, n): (yes + 0.5) / (total + 1) for since, n, total, yes in rows}
+
+
+def report_availability(
+    history: History,
+) -> tuple[dict[str, float], dict[tuple[int, int], float]]:
+    """
+    How often a player on the roster plays given the NBA's injury report,
+    over the same seasons as `availability`, from each game's last report
+    before its day's first tip-off: by status for a listed player, and by
+    spot (as in `availability`) for one who isn't listed by a team in the
+    report. Games of a team not in the report are left out
+    """
+    if not (
+        table_exists(history.con, "injury_report")
+        and table_exists(history.con, "schedule")
+    ):
+        return {}, {}
+    seasons = (
+        "IS NOT NULL"
+        if history.season is None
+        else f"BETWEEN {history.season - AVAILABILITY_SEASONS} AND {history.season - 1}"
+    )
+    rows = history.con.execute(f"""
+        WITH tg AS ({team_games(history)}),
+        played AS (
+            SELECT p.player_id, tg.team_id, tg.n
+            FROM ({history.player_games.sql_query()}) p
+            JOIN tg USING (game_id, team_id)
+            WHERE p.min > 0 AND p.season {seasons}
+        ), spots AS (
+            SELECT t.team_id, t.n, t.game_id, a.player_id,
+                t.n - 1 - max(a.n) AS since, count(*) AS played
+            FROM tg t
+            JOIN played a ON a.team_id = t.team_id
+                AND a.n BETWEEN t.n - {ROSTER_GAMES} AND t.n - 1
+            WHERE t.season {seasons}
+            GROUP BY t.team_id, t.n, t.game_id, a.player_id
+        ), firsts AS (
+            SELECT game_date, min(start_time) AS first
+            FROM schedule WHERE season {seasons} GROUP BY game_date
+        ), latest AS (
+            SELECT f.game_date, max(r.report_time) AS report_time
+            FROM firsts f
+            JOIN injury_report r ON r.season {seasons}
+                AND r.report_time < f.first
+                AND r.report_time > f.first - INTERVAL 2 DAY
+            GROUP BY f.game_date
+        ), listed AS (
+            SELECT r.game_id, r.team_id, r.player_id, r.status
+            FROM injury_report r
+            JOIN latest l USING (report_time, game_date)
+        ), teams AS (
+            SELECT DISTINCT game_id, team_id FROM listed
+        )
+        SELECT l.status, s.since, s.played, count(*), count(a.n)
+        FROM spots s
+        JOIN teams USING (game_id, team_id)
+        LEFT JOIN listed l USING (game_id, team_id, player_id)
+        LEFT JOIN played a USING (team_id, n, player_id)
+        GROUP BY ALL
+    """).fetchall()
+    statuses: dict[str, list[int]] = defaultdict(lambda: [0, 0])
+    unlisted: dict[tuple[int, int], float] = {}
+    for status, since, n, total, yes in rows:
+        if status is None:
+            unlisted[since, n] = (yes + 0.5) / (total + 1)
+        else:
+            statuses[status][0] += total
+            statuses[status][1] += yes
+    # the same half a game's prior toward even
+    return (
+        {s: (yes + 0.5) / (total + 1) for s, (total, yes) in statuses.items()},
+        unlisted,
+    )
 
 
 def rosters(history: History) -> dict[str, dict[str, tuple[int, int]]]:

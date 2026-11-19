@@ -4,7 +4,14 @@ import duckdb
 import pytest
 
 from yarapm.harness import Game, History
-from yarapm.minutes import CAP, ProjectedMinutes, allocate, availability, rosters
+from yarapm.minutes import (
+    CAP,
+    ProjectedMinutes,
+    allocate,
+    availability,
+    report_availability,
+    rosters,
+)
 
 
 def utc(*args: int) -> datetime:
@@ -146,7 +153,10 @@ def schedule_and_injuries(con, injuries):
     con.execute("""CREATE OR REPLACE TEMP TABLE injuries (season INTEGER,
         fetched_at TIMESTAMP, team_id VARCHAR, player_id VARCHAR, status VARCHAR,
         fantasy_status VARCHAR, return_date DATE)""")
-    con.executemany("INSERT INTO injuries VALUES (2024, ?, 'A', ?, ?, ?, ?)", injuries)
+    if injuries:
+        con.executemany(
+            "INSERT INTO injuries VALUES (2024, ?, 'A', ?, ?, ?, ?)", injuries
+        )
 
 
 SCHEDULED = [
@@ -244,3 +254,103 @@ def test_the_pattern_alone_ignores_the_list():
     pattern.fit(History(con, date(2023, 11, 6), 2024))
     assert pattern.injuries is None
     assert pattern.predict(SCHEDULED) == expected
+
+
+def injury_report(con, rows):
+    """
+    The NBA's injury report, as `load` makes it: (report_time, game_id,
+    game_date, player_id, status), all for team A
+    """
+    con.execute("""CREATE OR REPLACE TEMP TABLE injury_report (season INTEGER,
+        report_time TIMESTAMP, game_id VARCHAR, game_date DATE, team_id VARCHAR,
+        player_id VARCHAR, status VARCHAR, reason VARCHAR)""")
+    con.executemany(
+        """INSERT INTO injury_report
+        VALUES (year(?::DATE + INTERVAL 6 MONTH), ?, ?, ?, 'A', ?, ?, 'Injury/Illness')""",
+        [(r[2], *r) for r in rows],
+    )
+
+
+def test_injury_report_sets_the_chance_of_playing():
+    con = duckdb.connect()
+    tables(con, [("A", "B", {"A": team(A_STARTERS, ["a6", "a7", "a8"]), "B": B})] * 5)
+    schedule_and_injuries(con, [])
+    x1, x2, _ = SCHEDULED
+    morning, late = utc(2023, 11, 6, 17), utc(2023, 11, 7, 1)
+    injury_report(
+        con,
+        [
+            (morning, "x1", x1.game_date, "a1", "Out"),
+            (morning, "x1", x1.game_date, "a2", "Questionable"),
+            # the next day's game is in the report too
+            (morning, "x2", x2.game_date, "a3", "Out"),
+            # after the first tip-off on the cutoff day: not seen
+            (late, "x2", x2.game_date, "a4", "Out"),
+        ],
+    )
+    model = ProjectedMinutes("unknown", half_life=5, start_bonus=0, report=True)
+    model.chances, model.chances_season = {(0, 5): 0.9}, 2024
+    model.status_chances = {"Out": 0.01, "Questionable": 0.5}
+    model.unlisted_chances = {(0, 5): 0.95}
+    model.fit(History(con, date(2023, 11, 6), 2024))
+    assert model.report is not None and model.report.report_time == morning
+
+    chances = {g.game_id: model.playing_chances("A", g) for g in SCHEDULED}
+    assert chances["x1"] == {"a1": 0.01, "a2": 0.5} | {
+        p: 0.95 for p in ["a3", "a4", "a5", "a6", "a7", "a8"]
+    }
+    assert chances["x2"]["a3"] == 0.01
+    assert chances["x2"]["a4"] == 0.95
+    # a game not in the report, and a team not in it: the pattern
+    assert chances["x3"] == {p: 0.9 for p in chances["x3"]}
+    assert set(model.playing_chances("B", x1).values()) == {0.9}
+    # with no game, the team's next one in the report
+    assert model.playing_chances("A") == chances["x1"]
+
+    # without the setting, the report changes nothing
+    plain = ProjectedMinutes("unknown", half_life=5, start_bonus=0, report=False)
+    plain.chances, plain.chances_season = {(0, 5): 0.9}, 2024
+    plain.fit(History(con, date(2023, 11, 6), 2024))
+    assert plain.report is None
+    assert plain.playing_chances("A", x1)["a1"] == 0.9
+
+
+def test_report_availability_fits_on_earlier_seasons():
+    con = duckdb.connect()
+    a = team(A_STARTERS, ["a6", "a7", "a8"])
+    # a1 is out from the third game; a2 is questionable and plays every
+    # other one
+    games = [("A", "B", {"A": a, "B": B})] * 2 + [
+        (
+            "A",
+            "B",
+            {"A": {k: v for k, v in a.items() if k != "a1" and (k != "a2" or i % 2)}}
+            | {"B": B},
+        )
+        for i in range(10)
+    ]
+    tables(con, games, season=2023)
+    con.execute("""CREATE OR REPLACE TEMP TABLE schedule AS
+        SELECT season, game_id, game_date, game_date + INTERVAL 24 HOUR AS start_time
+        FROM results""")
+    days = con.execute(
+        "SELECT game_id, game_date FROM results ORDER BY game_date"
+    ).fetchall()
+    injury_report(
+        con,
+        [
+            (datetime.combine(d, datetime.min.time()) + timedelta(hours=20), g, d, p, s)
+            for g, d in days[2:]
+            for p, s in [("a1", "Out"), ("a2", "Questionable")]
+        ],
+    )
+    statuses, unlisted = report_availability(History(con, date(2023, 11, 1), 2024))
+    assert statuses == {
+        "Out": pytest.approx(0.5 / 11),
+        "Questionable": pytest.approx(5.5 / 11),
+    }
+    # a3-a8 in the last two games, with ten games behind them; B isn't in
+    # the report
+    assert unlisted[0, 10] == pytest.approx(12.5 / 13)
+    # nothing from this season
+    assert report_availability(History(con, date(2023, 12, 1), 2023)) == ({}, {})

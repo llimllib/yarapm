@@ -26,8 +26,9 @@ Minutes come from yarapm.minutes, by `minutes`: "actual" (the minutes
 played, a leak that measures rating error on its own), "known" (who plays
 is known, minutes projected) or "unknown" (who plays is projected too),
 with `minutes_half_life` and `start_bonus`. With unknown availability,
-`injuries` says whether ESPN's injury list (#45) sets the chance of
-playing for the players on it; false is the pattern alone (#46).
+`report` says whether the NBA's injury report (#52) sets the chance of
+playing, and `injuries` whether ESPN's injury list (#45) does for the games
+the report doesn't cover; both false is the pattern alone (#46).
 
 A game's age counts only days in a season, regular season to Finals:
 the breaks between seasons (about 128 days) are skipped, so the summer
@@ -281,6 +282,7 @@ class PlayerRatings:
         offseason: bool = False,
         box_offseason: bool = True,
         injuries: bool = True,
+        report: bool = True,
         aging: bool = True,
         aging_ridge: float = 1e4,
         loosen: float = 3.0,
@@ -300,7 +302,9 @@ class PlayerRatings:
         self.projection: ActualMinutes | ProjectedMinutes = (
             ActualMinutes()
             if minutes == "actual"
-            else ProjectedMinutes(minutes, minutes_half_life, start_bonus, injuries)
+            else ProjectedMinutes(
+                minutes, minutes_half_life, start_bonus, injuries, report
+            )
         )
         self.aging = aging
         self.aging_ridge = aging_ridge
@@ -350,6 +354,8 @@ class PlayerRatings:
                 }
                 # only when false, so runs from before #46 keep their ids
                 | ({} if self.projection.use_injuries else {"injuries": False})
+                # only when true, so runs from before #52 keep their ids
+                | ({"report": True} if self.projection.use_report else {})
             )
             | ({"aging": True, "aging_ridge": self.aging_ridge} if self.aging else {})
             | (

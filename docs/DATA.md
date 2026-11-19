@@ -36,8 +36,8 @@ probabilities to four.
 box-score prior, with older games weighted less; a team's expected score is
 its players' ratings weighted by projected minutes, times adjusted tempo,
 with home court. Who plays isn't known ahead of time, so minutes are
-projected with each player's chance of playing, from ESPN's injury list
-for the players on it. The
+projected with each player's chance of playing, from the NBA's injury
+report (and ESPN's injury list for the games it doesn't cover). The
 [tracking issue](https://github.com/llimllib/yarapm/issues/24) has the
 design and how it's been tested. Every dataset is built with the settings
 and commit in `metadata`.
@@ -126,12 +126,12 @@ predictions weigh them; `team_players_daily` has the lineups.
   its first game, its roster as in `minutes`). The 240 minutes go to the
   ones with the most minutes when they play, each getting theirs (up to
   42), until they're used up; the rest get none. A player hurt since before
-  the season isn't counted until he plays.
+  the season isn't counted until they play.
 - **Today:** the lineup the predictions use for the team's next game:
   each player's chance of playing × their minutes when playing, scaled to
-  240 (see `minutes`). The injury list is the one the predictions used:
-  for a day rebuilt after the fact, the last one fetched before the day's
-  first tip-off.
+  240 (see `minutes`). The injury report and list are the ones the
+  predictions used: for a day rebuilt after the fact, the last of each
+  before the day's first tip-off.
 
 Each is relative to the average of the 30 teams that day. The two lineups
 give out minutes differently (in order, and scaled), so even a healthy
@@ -228,30 +228,43 @@ games and haven't played for another team since. Each one's minutes are
 their chance of playing × their minutes when they play (a weighted average
 of their recent games), scaled to 240, with no one above 42.
 
-The chance of playing comes from ESPN's injury list (nba_data's
+The chance of playing comes from the NBA's official injury report
+(nba_data's `injury_report`), the last one before the build, for a game
+it covers and a team that has filed it: by a listed player's status, and
+for a player who isn't listed, from how many of the team's last 10 games
+they played and how long ago their last one was. Both are fit on the
+three seasons before this one, from each game's last report before the
+day's first tip-off: roughly, a player listed `Out` plays 0.1% of the
+time, `Doubtful` 1%, `Questionable` 53%, `Probable` 93% and `Available`
+86%. A report covers its day's games and the next day's.
+
+For a game the report doesn't cover for the team (a later game, or a team
+that hasn't filed yet), it comes from ESPN's injury list (nba_data's
 `espn_injuries`, from November 12, 2026), the last one fetched before the
 build, for a player on it: 0 if listed `out` (`OUT` or `OFS`) or
 suspended, 0.5 if `out` as a game-time decision (`GTD`) and 0.7 if
 `day_to_day`. These were set by hand from the first few days of lists,
 not fit. A listing covers the team's next game and its games before the
-entry's return date; in later games, and for everyone not listed, it's
+entry's return date. In later games, and for everyone in neither, it's
 from how many of the team's last 10 games they played and how long ago
-their last one was. Coming off the list doesn't put a player on the
-roster: one back from a long absence isn't projected until he plays.
+their last one was. Coming off the report or the list doesn't put a
+player on the roster: one back from a long absence isn't projected until
+they play.
 
 | Column | Type | Description |
 |--------|------|-------------|
 | season, game_id, team_id, player_id | | Key |
 | min | DOUBLE | Expected minutes, counting the chance they don't play |
-| play_prob | DOUBLE | The chance they play in this game: from the injury list if they're listed for it, otherwise from how many of the team's last 10 games they played and how long ago their last one was |
+| play_prob | DOUBLE | The chance they play in this game: from the injury report if it covers the game for their team, or ESPN's injury list if they're listed for it, otherwise from how many of the team's last 10 games they played and how long ago their last one was |
 | as_of_date | DATE | The build's day |
 
 ### `prediction_log`
 
 Every prediction made for a game before it started, from the published
 model (`rapm`) and two to compare it to: `rapm_pattern`, the same model
-without ESPN's injury list, guessing who plays from each player's recent
-pattern alone (from November 17, 2026, to measure what the list adds),
+without the injury report or ESPN's injury list, guessing who plays from
+each player's recent pattern alone (from November 17, 2026, to measure
+what they add; `rapm` has used the report since November 19, 2026),
 and a team-rating baseline (`team`, KenPom-style). `predictions` and
 `minutes` are `rapm`'s. Each build logs its predictions for the games in the next 7
 days that haven't started, but only where a game's prediction has changed

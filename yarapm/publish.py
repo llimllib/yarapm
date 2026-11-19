@@ -31,7 +31,8 @@ bucket's yarapm/ prefix, laid out like nba_data's, one file per season:
                    in those games
     prediction_log every prediction made before its game (#29), from the
                    live `rapm` model, and to compare it to, `rapm_pattern`
-                   (`rapm` without the injury list, #46) and `team`, for
+                   (`rapm` without the injury report or list, #46) and
+                   `team`, for
                    the games in the next LOG_DAYS days that haven't
                    started. A build adds a
                    row only when a game's prediction has changed since its
@@ -53,9 +54,10 @@ hash of the code, the locked dependencies and the first season of
 play-by-play). A build keeps the season's days
 if its files were built by this version, fitting only the missing ones and
 the build's day, and refits every day if not. The chance of playing uses
-ESPN's injury list (#45): the build's predictions and its day's lineups
-the latest fetched before the build, and a day fit for the daily datasets
-the latest fetched before its first tip-off. The logs are the live
+the NBA's injury report (#52), and ESPN's injury list (#45) for the games
+the report doesn't cover: the build's predictions and its day's lineups
+the latest of each before the build, and a day fit for the daily datasets
+the latest before its first tip-off. The logs are the live
 record (#29) and keep what earlier builds wrote, whatever built them.
 Either way a build starts from the bucket's files, and refuses to run if
 metadata.json lists a season of a daily dataset or log that the mirror
@@ -392,7 +394,7 @@ def build(
     settings = json.dumps(model.settings, sort_keys=True)
     version = model_version(play_by_play_from(con))
 
-    # the injury list is the latest fetched before the build (#45)
+    # the injury report and list are the latest before the build (#45, #52)
     forecasts = forecast(con, model, games, day, now)
     minutes, chances = projected(model, [g for g, _ in games])
     # the build's day is rated again by every build
@@ -410,7 +412,7 @@ def build(
     team = TeamRatings()
     window = [(g, start) for g, start in games if (g.game_date - day).days < LOG_DAYS]
     team_forecasts = forecast(con, team, window, day)
-    # the same model without the injury list, only logged (#46)
+    # the same model without the injury report or list, only logged (#46)
     pattern = pattern_model()
     pattern_forecasts = forecast(con, pattern, window, day, now)
     pattern_minutes, pattern_chances = projected(pattern, [g for g, _ in window])

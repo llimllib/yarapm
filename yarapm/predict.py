@@ -15,10 +15,11 @@ schedule's.
 The live models are LIVE_MODELS: `rapm` with unknown availability (#11),
 since who plays in a future game isn't known, and the `team` baseline to
 compare it to (#29), each with its default settings otherwise. `rapm`
-uses ESPN's injury list (#45) for the chance of playing: here the last
-one fetched before `--date`'s first tip-off (`History`). `rapm_pattern` is
-`rapm` without the list, guessing who plays from each player's recent
-pattern alone: it's logged beside `rapm` to measure the list (#46).
+uses the NBA's injury report (#52) for the chance of playing, and ESPN's
+injury list (#45) for the games the report doesn't cover: here the last
+of each before `--date`'s first tip-off (`History`). `rapm_pattern` is
+`rapm` without either, guessing who plays from each player's recent
+pattern alone: it's logged beside `rapm` to measure them (#46).
 
 Win probability is P(margin > 0) for a normal centered on the predicted
 margin, as the harness scores it, but with a fixed spread: a live
@@ -41,18 +42,18 @@ from yarapm.games import schedule_query
 from yarapm.harness import EASTERN, Game, History, Model, Prediction, load
 from yarapm.players import PlayerRatings
 
-# margin RMSE of each model's daily run on 2021-2024: rapm-6833e941 (minutes
-# unknown, with aging and the early-season ridge, #50) and team-2ac45b4a.
-# `rapm_pattern` is `rapm` on those seasons, which have no injury list
-SIGMA = {"rapm": 13.63, "rapm_pattern": 13.63, "team": 13.93}
+# margin RMSE of each model's daily run on 2021-2024: rapm-3f3b312b (minutes
+# unknown, with the injury report, #52), rapm-7687fe33 (the same without
+# it: those seasons have no ESPN list) and team-2ac45b4a
+SIGMA = {"rapm": 13.5, "rapm_pattern": 13.63, "team": 13.93}
 
 
 def pattern_model() -> PlayerRatings:
     """
-    The live `rapm` model without the injury list, guessing who plays from
-    the pattern alone: logged beside it to measure the list (#46)
+    The live `rapm` model without the injury report or list, guessing who
+    plays from the pattern alone: logged beside it to measure them (#46)
     """
-    model = PlayerRatings(minutes="unknown", injuries=False)
+    model = PlayerRatings(minutes="unknown", injuries=False, report=False)
     model.name = "rapm_pattern"
     return model
 

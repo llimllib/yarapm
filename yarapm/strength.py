@@ -8,15 +8,16 @@ model predicts with (`PlayerRatings.strength`), for two lineups:
            getting theirs, until they're used up (`fill`)
     today  the lineup the predictions use for the team's next game: each
            player on the model's roster at their chance of playing (from
-           ESPN's injury list if they're on it, #45) × their minutes when
-           playing, scaled to 240
+           the NBA's injury report, #52, or ESPN's injury list, #45, if
+           the team's next game is in them) × their minutes when playing,
+           scaled to 240
 
 The full-strength lineup is the players who've played for the team this
 season and not for another team since (`played_for`). The model's roster
 can't be used: it's the players in the team's last 10 games, so early in a
 season it has last April's fill-ins, who at full minutes would count as
-starters. A player hurt since before the season isn't counted until he
-plays. Before a team's first game of the season, its full-strength lineup
+starters. A player hurt since before the season isn't counted until they
+play. Before a team's first game of the season, its full-strength lineup
 is its model roster.
 
 Full strength fills the minutes in order rather than scaling everyone's

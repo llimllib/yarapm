@@ -148,12 +148,17 @@ def test_predicts_from_ratings_and_minutes():
 
 
 def test_injuries_setting_keeps_run_ids():
-    # the default isn't in the settings, so runs from before #46 keep their ids
-    assert "injuries" not in PlayerRatings(minutes="unknown").settings
+    # `injuries` is in the settings only when false, so runs from before #46
+    # keep their ids, and `report` only when true, for those before #52
+    settings = PlayerRatings(minutes="unknown").settings
+    assert "injuries" not in settings and settings["report"] is True
+    assert "report" not in PlayerRatings(minutes="unknown", report=False).settings
     models = live_models()
     pattern = models["rapm_pattern"]
     assert pattern.name == "rapm_pattern" and models["rapm"].name == "rapm"
-    assert pattern.settings == models["rapm"].settings | {"injuries": False}
+    assert pattern.settings == {
+        k: v for k, v in models["rapm"].settings.items() if k != "report"
+    } | {"injuries": False}
 
 
 def test_aging_carries_ratings_to_this_season():
