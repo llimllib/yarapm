@@ -1098,11 +1098,23 @@ def availability_curves() -> Svg:
     from datetime import date
 
     from yarapm.harness import History, load
-    from yarapm.minutes import availability
+    from yarapm.minutes import availability, report_availability
 
     con = connect()
     load(con, ROOT / "out")
-    chances = availability(History(con, date(2026, 6, 13), 2026))
+    history = History(con, date(2026, 6, 13), 2026)
+    chances = availability(history)
+    statuses, unlisted = report_availability(history)
+    print(
+        "injury report, by status: "
+        + ", ".join(f"{k}: {v:.3f}" for k, v in sorted(statuses.items()))
+    )
+    print(
+        "unlisted, played 10 of 10: "
+        f"{unlisted[0, 10]:.3f} (the pattern's {chances[0, 10]:.3f}); "
+        f"9 of 10, missed the last: {unlisted[1, 9]:.3f} "
+        f"(the pattern's {chances[1, 9]:.3f})"
+    )
     s = Svg(
         640,
         240,
@@ -1145,8 +1157,8 @@ def availability_curves() -> Svg:
 # the daily `rapm` run with unknown availability on 2021-2024, the
 # scoreboard's (yarapm.harness --model rapm --cadence daily --set
 # minutes=unknown), with aging (#48), the early-season ridge (#50),
-# back-to-backs (#21) and segments from 2010 on
-RUN = ROOT / "out" / "runs" / "predictions" / "run=rapm-7687fe33" / "data.parquet"
+# back-to-backs (#21), the injury report (#52) and segments from 2010 on
+RUN = ROOT / "out" / "runs" / "predictions" / "run=rapm-3f3b312b" / "data.parquet"
 
 
 def run_errors():

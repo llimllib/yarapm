@@ -279,16 +279,16 @@ of the previous season, with the playoff term taken out.
 ::: code
 [`decay()`](code:yarapm/fit.py#L6) is one line. The ages, without the
 breaks between seasons, come from
-[`History.age()`](code:yarapm/harness.py#L204). The cutoff at eight half
+[`History.age()`](code:yarapm/harness.py#L217). The cutoff at eight half
 lives is applied in SQL, before any rows are read
-([`lineups()`](code:yarapm/players.py#L178)), so a fit reads only the
+([`lineups()`](code:yarapm/players.py#L179)), so a fit reads only the
 segments that still matter: eight seasons of them, about 570,000 rows.
 The aging columns are
-[`aging_covariates()`](code:yarapm/players.py#L138), from the cubic in
-[`age_basis()`](code:yarapm/players.py#L119) and each player's year of
-birth ([`born()`](code:yarapm/players.py#L129)). The
+[`aging_covariates()`](code:yarapm/players.py#L139), from the cubic in
+[`age_basis()`](code:yarapm/players.py#L120) and each player's year of
+birth ([`born()`](code:yarapm/players.py#L130)). The
 level is computed right after the ratings, in
-[`PlayerRatings.fit`](code:yarapm/players.py#L363), from the same rows
+[`PlayerRatings.fit`](code:yarapm/players.py#L369), from the same rows
 reweighted with the seven-day half life. Because @prop:memoryless makes
 a day's change in the weights a single factor, yesterday's ratings are a
 good starting point for today's solve, which is why each day's fit is

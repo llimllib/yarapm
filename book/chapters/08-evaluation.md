@@ -26,9 +26,9 @@ error* is $\sqrt{\frac1N \sum e_g^2}$.
 The RMSE is the headline number: it punishes large misses more than
 small ones, and it's what the regression minimizes. Over the 5,133 games
 of 2021–2024, predicted the way the model is used, from the games before
-each day and guessing who will play, the margin RMSE is 13.63 points,
-the mean absolute error 10.69 and the bias $-0.20$. For totals the RMSE
-is 18.44.
+each day and guessing who will play from the injury report, the margin
+RMSE is 13.50 points, the mean absolute error 10.60 and the bias
+$-0.14$. For totals the RMSE is 18.42.
 
 ## From a margin to a probability
 
@@ -43,22 +43,22 @@ $$
 \Pr(M > 0) = \Phi\!\left(\frac{\hat M}{\sigma}\right),
 $$ {#eq:win-prob}
 where $\Phi$ is the standard normal distribution function, and $\sigma$
-is the model's margin RMSE on the tuning seasons, 13.63 points.^[$\Phi(z)
+is the model's margin RMSE on the tuning seasons, 13.50 points.^[$\Phi(z)
 = \int_{-\infty}^z e^{-t^2/2}\,dt/\sqrt{2\pi}$ is the probability that a
 standard normal is at most $z$; if $M \sim N(\mu, \sigma^2)$ then $(M -
 \mu)/\sigma$ is standard normal, so $\Pr(M > 0) = \Pr\!\left(\frac{M -
 \mu}{\sigma} > -\frac{\mu}{\sigma}\right) = \Phi(\mu/\sigma)$.]
 :::
 
-For Game 5, $\Phi(6.7/13.63) = \Phi(0.49) = 0.69$. Is the normal
+For Game 5, $\Phi(6.7/13.50) = \Phi(0.50) = 0.69$. Is the normal
 assumption any good? @fig:errors compares the errors with a normal curve
-of the same spread. They fit well: 30.1% of games miss by more than one
-$\sigma$, against 31.7% for a normal, and 4.7% by more than two, against
+of the same spread. They fit well: 30.0% of games miss by more than one
+$\sigma$, against 31.7% for a normal, and 4.8% by more than two, against
 4.55%.
 
 ![The distribution of the error in the predicted margin, 2021–2024, in
 4-point bins, and a normal density with the same standard deviation,
-13.63 points.](figures/errors.svg){#fig:errors}
+13.50 points.](figures/errors.svg){#fig:errors}
 
 ## Scoring probabilities
 
@@ -84,14 +84,14 @@ since $-\ln q$ grows without bound as $q \to 0$, which makes it sensitive
 to whether $\sigma$ is right. With $\sigma$ too small, every prediction
 is overconfident, and the losses on the upsets dominate.
 
-The model's log loss on 2021–2024 is 0.621, and its Brier score 0.216.
+The model's log loss on 2021–2024 is 0.615, and its Brier score 0.213.
 The most direct check of the probabilities is *calibration*: of the
 games it gave the home team a 70–80% chance, the home team should win
 about 75%. @fig:calibration groups the games by predicted probability.
 Most groups are within their sampling error of the diagonal. The two
 just outside it, 30–40% and 60–70%, both miss the same way, toward the
-favorite: overall, the favorite won 65.6% of the games, where the model
-expected 63.8%, so its probabilities are a little too timid.
+favorite: overall, the favorite won 65.8% of the games, where the model
+expected 64.1%, so its probabilities are a little too timid.
 
 ![Calibration on 2021–2024: the games grouped by the predicted chance
 that the home team wins, in tenths, plotted at the group's average
@@ -109,7 +109,8 @@ that set the bar.
 | home court only | 14.98 | 0.687 | 19.97 |
 | team ratings | 13.93 | 0.636 | 18.73 |
 | last season's OpenRAPM, who plays guessed | 14.03 | 0.637 | 18.60 |
-| player ratings, who plays guessed | **13.63** | **0.621** | **18.44** |
+| player ratings, who plays guessed from the pattern | 13.63 | 0.621 | 18.44 |
+| player ratings, who plays guessed from the injury report | **13.50** | **0.615** | **18.42** |
 | player ratings, who plays known | 13.50 | 0.610 | 18.36 |
 | this season's OpenRAPM (a ceiling) | 13.10 | 0.592 | 17.92 |
 
@@ -124,8 +125,9 @@ upper bound rather than a fair comparison. {#tbl:scoreboard-full}
 Ratings fit to the whole of the season being predicted, which no fair
 model could have, would get to about 13.1; nothing that only sees the
 past will. Between that ceiling and team ratings, yarapm's player model
-with guessed availability closes about a third of the gap, and knowing
-who plays about half. OpenRAPM, a respected public set of
+closes about a third of the gap guessing who plays from each player's
+recent pattern, and about half with the injury report, as much as
+knowing who plays. OpenRAPM, a respected public set of
 player ratings, does no better than team ratings when last season's are
 used for this one, which is a reminder that ratings for *describing*
 past seasons and ratings for *predicting* the next game are different
@@ -134,10 +136,10 @@ products.^[OpenRAPM's ratings are in nba_data's catalog as
 
 The numbers also vary by the phase of the season. Early, when either
 team has played fewer than 20 games and rosters are new, the margin RMSE
-is 13.43; in mid-season 13.52; after the trade deadline 13.70; in the
-playoffs 14.53. The playoffs are where the model is weakest: it
+is 13.34; in mid-season 13.42; after the trade deadline 13.48; in the
+playoffs 14.57. The playoffs are where the model is weakest: it
 underrates home teams by 2.5 points of margin and overpredicts totals by
-1.3, both open questions in the project.
+1.0, both open questions in the project.
 
 ## Keeping it honest {#sec:live}
 
@@ -186,15 +188,15 @@ record will be the real answer to this chapter's question; as this is
 written, it has scored a handful of games.
 
 ::: code
-The harness is [`yarapm/harness.py`](code:yarapm/harness.py#L411): for
+The harness is [`yarapm/harness.py`](code:yarapm/harness.py#L451): for
 each game day it fits the model on a `History` cut at that day and
 predicts the day's games, then writes the predictions and
-[`score()`](code:yarapm/harness.py#L645)'s metrics to Parquet, tagged
+[`score()`](code:yarapm/harness.py#L685)'s metrics to Parquet, tagged
 with a run id hashed from the model's settings. A daily run over four
 seasons takes about seven minutes; for tuning, a weekly cadence, fitting
 on each week's first game day, is fast enough to sweep grids and close
 enough to the daily results to rank settings. The phases come from
-[`phases()`](code:yarapm/harness.py#L524), which needs each season's
+[`phases()`](code:yarapm/harness.py#L564), which needs each season's
 trade deadline. The live log is `prediction_log` in the published data,
 scored into `live_metrics`.
 :::
@@ -213,7 +215,7 @@ is minimized at $q = p$. Do the same for the Brier score.
 :::
 
 ::: {.exercise #exr:sigma}
-Suppose the model used $\sigma = 10$ in @eq:win-prob instead of 13.63,
+Suppose the model used $\sigma = 10$ in @eq:win-prob instead of 13.50,
 with the same predicted margins. Which way would @fig:calibration's points
 move? Would the log loss go up or down? Why?
 :::

@@ -163,7 +163,7 @@ for both, and the games moved each where they belonged.
 The prior is [`BoxPrior`](code:yarapm/prior.py#L203) in
 `yarapm/prior.py`. Its [`train`](code:yarapm/prior.py#L242) method fits
 the two formulas when the season changes, from
-[`PlayerRatings.target`](code:yarapm/players.py#L433), the plain RAPM fit
+[`PlayerRatings.target`](code:yarapm/players.py#L439), the plain RAPM fit
 over every earlier season. [`box_features`](code:yarapm/prior.py#L143)
 computes the eighteen inputs, with the steadying constants in
 [`RATES`](code:yarapm/prior.py#L42). Box scores go back to 2010, two

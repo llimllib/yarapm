@@ -119,15 +119,15 @@ history in 2014 instead of 2018, without anyone doing anything. Days
 later, play-by-play for 2010 and 2011 arrived, and it started in 2012.
 
 ::: code
-The datasets are built by [`yarapm/publish.py`](code:yarapm/publish.py#L371):
+The datasets are built by [`yarapm/publish.py`](code:yarapm/publish.py#L373):
 `build` writes the current season every time nba_data updates, refitting
 only the new days if the season's files were built by this version (at
 about 0.2 to 0.9 seconds a day), and
-[`backfill`](code:yarapm/publish.py#L535) refits finished seasons whose
+[`backfill`](code:yarapm/publish.py#L537) refits finished seasons whose
 files are stale, which takes 45 to 75 minutes for all of them in GitHub
-Actions. The version is [`model_version`](code:yarapm/publish.py#L161).
+Actions. The version is [`model_version`](code:yarapm/publish.py#L163).
 The full-strength lineups are in
-[`yarapm/strength.py`](code:yarapm/strength.py#L89).
+[`yarapm/strength.py`](code:yarapm/strength.py#L90).
 
 Each season is one Parquet file, sorted by player and written in row
 groups of 20,480 rows. A reader filtering on one player can skip every

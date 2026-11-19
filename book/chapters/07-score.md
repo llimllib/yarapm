@@ -79,9 +79,9 @@ barely sensitive to the choice: within 0.03 points over the whole grid.
 ## Who plays
 
 The harder question is who will play at all. The model guesses from
-each player's recent pattern, and for the live predictions it also reads
-ESPN's injury list, which nba_data has saved before each game since
-November 2026.
+each player's recent pattern, and then corrects the guess with the
+NBA's official injury report, which nba_data has saved before each game
+since December 2018.
 
 ::: {.definition #def:availability title="Chance of playing"}
 A team's *roster* is the players who played in one of its last 10 games
@@ -113,30 +113,44 @@ minutes when playing, and the team's are scaled to add to 240, with no
 player above 42; minutes over the cap go to the others in proportion.
 
 The pattern only knows about absences that have already happened: a
-player hurt in his last game is projected as if he'll play, at 94%.
-ESPN's injury list knows better, and it's reliable. Of the 147 players
-it listed as out or suspended in the last list before the games of
-November 13–15, 2026, none played; 7 of the 11 listed day-to-day did,
-and 1 of the 3 listed out as a game-time decision. So for a player on
-the list, the live predictions replace the pattern's chance with one
-from their status: 0 if out or suspended, ½ if out as a game-time
-decision, 0.7 if day-to-day. Those three numbers were set by hand from
-those few days, not fit; with a few weeks of lists they can be fit the
-same way as @def:availability. A listing covers the team's next game,
-and its later games before ESPN's expected return date. After that the
-pattern takes over again: the list says nothing about next week.
+player hurt in their last game is projected as if they'll play, at 94%.
+The injury report knows better. Every team must list each player who
+may miss its next game, as `Out`, `Doubtful`, `Questionable`,
+`Probable` or `Available`, and the league publishes the reports through
+the day. A team that has filed its report also says something about the
+players it left off: they're expected to play.
 
-A prediction uses the last list fetched before it was made, so a
-rebuilt day uses the list fetched before its first tip-off. There's no
-list before November 2026, so the harness's seasons are untouched by
-it, and it can't be tested on them: its record is the live one
-(@sec:live).
+So for a game the report covers, the chance of playing comes from the
+report instead, fit the same way as @def:availability over the same
+three seasons, from each game's last report before the day's first
+tip-off. A listed player's chance depends on their status; as of the
+2026 Finals, a player listed `Out` played 0.2% of the time, `Doubtful`
+1.4%, `Questionable` 52%, `Probable` 93% and `Available` 84%. A player
+left off the report keeps their spot $(g, p)$, but the share is taken
+only over players their team didn't list: one who played all of the
+last 10 games plays 98% of the time instead of 94%, and one who missed
+just the last game 68% instead of 49%. A report lists that day's games
+and the next day's, so it can't help with a game later in the week, or
+with a team that hasn't filed yet; those keep the pattern's chance.
 
-This is the weakest part of the model, and the scoreboard shows it.
-When the harness is allowed to know who actually played, standing in
-for an injury report, the margin RMSE on 2021–2024 is 13.50; guessing,
-as it must for real predictions, it's 13.63. Knowing who plays is worth
-more than the box-score prior.
+For those games, the live predictions also read ESPN's injury list,
+which nba_data has saved since November 2026. For a player on it, the
+chance comes from their status: 0 if out or suspended, ½ if out as a
+game-time decision, 0.7 if day-to-day, set by hand from the first few
+days of lists. A listing covers the team's next game, and its later
+games before ESPN's expected return date.
+
+A prediction uses the last report and list before it was made, so a
+rebuilt day uses the ones from before its first tip-off. Neither adds
+a player to the roster: one back from a long absence isn't projected
+until they play.
+
+Who plays was the weakest part of the model, and the report all but
+closes it. When the harness is allowed to know who actually played,
+the margin RMSE on 2021–2024 is 13.50. Guessing from the pattern
+alone, it's 13.63, and with the injury report, 13.50 again: the report
+recovers almost all of what knowing who plays is worth, which is more
+than the box-score prior.
 
 ## How many possessions
 
@@ -226,19 +240,22 @@ open experiments in the project.
 
 ::: code
 The expected score, @eq:expected-score, is
-[`PlayerRatings.predict`](code:yarapm/players.py#L481), and team
-strength is [`strength`](code:yarapm/players.py#L452), which takes
+[`PlayerRatings.predict`](code:yarapm/players.py#L487), and team
+strength is [`strength`](code:yarapm/players.py#L458), which takes
 each team's projected minutes and normalizes them, so it works with any
-total. Minutes are [`ProjectedMinutes`](code:yarapm/minutes.py#L115):
+total. Minutes are [`ProjectedMinutes`](code:yarapm/minutes.py#L134):
 minutes when playing are one SQL query with a window function numbering
-each player's games ([`when_playing`](code:yarapm/minutes.py#L147)), the
+each player's games ([`when_playing`](code:yarapm/minutes.py#L178)), the
 roster and the $(g, p)$ spots come from
-[`rosters`](code:yarapm/minutes.py#L300) and
-[`availability`](code:yarapm/minutes.py#L261), and
-[`allocate`](code:yarapm/minutes.py#L73) scales a team's minutes to 240
+[`rosters`](code:yarapm/minutes.py#L433) and
+[`availability`](code:yarapm/minutes.py#L320), and
+[`allocate`](code:yarapm/minutes.py#L92) scales a team's minutes to 240
 under the cap, iterating because capping one player changes everyone
-else's share. The injury list comes from `History.injuries`, and
-`ProjectedMinutes.playing_chances` swaps in its chances for each game.
+else's share. The injury report comes from `History.injury_report`
+and its chances from
+[`report_availability`](code:yarapm/minutes.py#L359); ESPN's list
+comes from `History.injuries`, and `ProjectedMinutes.playing_chances`
+swaps in their chances for each game.
 Tempo is [`Tempo`](code:yarapm/tempo.py#L21), a small dense
 weighted ridge regression with one column per team.
 :::
