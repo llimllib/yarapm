@@ -1279,14 +1279,16 @@ def george() -> Svg:
         print(
             f"george {season}: final {last[4]:+.2f} (offense {last[2]:+.2f}, defense {last[3]:+.2f}), {', '.join(teams)}"
         )
-    o_sd, d_sd, n = con.execute("""
-        SELECT stddev(o_rating), stddev(d_rating), count(*) FROM yarapm.ratings_daily
-        WHERE season = 2026 AND possessions >= 2000 AND as_of_date = (
-            SELECT max(as_of_date) FROM yarapm.ratings_daily WHERE season = 2026)
-    """).fetchall()[0]
-    print(
-        f"2026 regulars (2,000+ possessions), final day: {n}, offense sd {o_sd:.2f}, defense sd {d_sd:.2f}"
-    )
+    # chapter 9 quotes the 2,000+ spreads, chapter 4 the 4,000+
+    for least in (2000, 4000):
+        o_sd, d_sd, n = con.execute(f"""
+            SELECT stddev(o_rating), stddev(d_rating), count(*) FROM yarapm.ratings_daily
+            WHERE season = 2026 AND possessions >= {least} AND as_of_date = (
+                SELECT max(as_of_date) FROM yarapm.ratings_daily WHERE season = 2026)
+        """).fetchall()[0]
+        print(
+            f"2026 regulars ({least:,}+ possessions), final day: {n}, offense sd {o_sd:.2f}, defense sd {d_sd:.2f}"
+        )
     start, end = date(2013, 10, 1), date(2026, 12, 1)
     span = (end - start).days
     s = Svg(

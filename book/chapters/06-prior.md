@@ -113,8 +113,8 @@ It learns what a scout would expect: in 2026 its defensive prior rises by
 0.40 points per 100 for each standard deviation of height (3.3 inches),
 and its offensive prior falls by 0.32 for each standard deviation of the
 log of the draft pick. On opening night of 2024, Victor Wembanyama, a
-7′4″ first overall pick, had a prior of $-0.9$ on offense and $+1.3$ on
-defense, $+0.4$ in total: about as good a prior as the formula gives
+7′4″ first overall pick, had a prior of $-0.8$ on offense and $+1.4$ on
+defense, $+0.6$ in total: about as good a prior as the formula gives
 anyone, and far from where Wembanyama would end up.
 
 A player's prior blends the two formulas by how much the box formula
@@ -139,7 +139,7 @@ data, about 4,400 possessions against the penalty's 3,000, has the larger
 say (@thm:shrinkage), and the rating ends about a point and a half above
 the prior.
 
-Two seasons later, the same model's final 2026 rating for Wembanyama was $+9.4$,
+Two seasons later, the same model's final 2026 rating for Wembanyama was $+9.3$,
 second in the league behind Jokić.
 
 ## What the prior is worth
