@@ -67,7 +67,7 @@ import pyarrow as pa
 from scipy.special import ndtr
 
 from yarapm.catalog import OUT, connect, read
-from yarapm.games import load_results, schedule_query
+from yarapm.games import GAME_TYPES, load_results, schedule_query
 
 TUNING_SEASONS = (2021, 2022, 2023, 2024)
 HOLDOUT_SEASONS = (2025, 2026)
@@ -227,6 +227,22 @@ class History:
         return self._before("all_segments")
 
     @property
+    def rested_segments(self) -> duckdb.DuckDBPyRelation:
+        """
+        `segments` with `off_rest` and `def_rest`, each team's days off
+        before the game (`load_rest`), both 1 if `load` hasn't made the
+        table
+        """
+        if not table_exists(self.con, "rest"):
+            return self.segments.select("*, 1 AS off_rest, 1 AS def_rest")
+        return self._before("""(
+            SELECT s.*, o.rest AS off_rest, d.rest AS def_rest
+            FROM all_segments s
+            LEFT JOIN rest o ON o.game_id = s.game_id AND o.team_id = s.off_team_id
+            LEFT JOIN rest d ON d.game_id = s.game_id AND d.team_id = s.def_team_id
+        )""")
+
+    @property
     def player_games(self) -> duckdb.DuckDBPyRelation:
         """nba.player_game_logs' rows for the games in `results`"""
         return self._before("player_games")
@@ -326,6 +342,21 @@ class History:
             ).fetchall()
             next_games = {team: (game, day) for team, game, day in rows}
         return InjuryList(fetched, players, next_games)
+
+    def rest(self, game_ids: list[str]) -> dict[tuple[str, str], int | None]:
+        """
+        Each team's days off before each of `game_ids` (`load_rest`),
+        {(game_id, team_id): rest}. Not a leak: the schedule is known in
+        advance. Empty if `load` hasn't made the table
+        """
+        if not table_exists(self.con, "rest"):
+            return {}
+        rows = self.con.execute(
+            """SELECT game_id, team_id, rest FROM rest
+            WHERE game_id IN (SELECT unnest(?::VARCHAR[]))""",
+            [game_ids],
+        ).fetchall()
+        return {(g, t): r for g, t, r in rows}
 
     def actual_minutes(self, game_ids: list[str]) -> list[tuple[str, str, str, float]]:
         """
@@ -699,7 +730,7 @@ def load(con: duckdb.DuckDBPyConnection, out: Path = OUT) -> None:
     """
     The tables `History` reads: `results`, `player_games`, `bio`,
     `openrapm`, `injuries` (ESPN's injury lists), `schedule`
-    (`yarapm.games.schedule_query`), and `all_segments` if built; and
+    (`yarapm.games.schedule_query`), `rest` (`load_rest`), and `all_segments` if built; and
     `lines`, for scoring
     """
     load_results(con)
@@ -743,8 +774,39 @@ def load(con: duckdb.DuckDBPyConnection, out: Path = OUT) -> None:
         FROM nba.espn_injuries
     """)
     con.execute(f"CREATE OR REPLACE TEMP TABLE schedule AS {schedule_query()}")
+    load_rest(con)
     if (out / "segments").is_dir():
         read(con, "segments", out).create_view("all_segments", replace=True)
+
+
+def load_rest(con: duckdb.DuckDBPyConnection) -> None:
+    """
+    Temp table `rest`: (game_id, team_id, rest), each team's days off
+    before each game, 0 on the second night of a back-to-back, NULL in its
+    first game of a season. From every game played (nba.games, the types
+    in `yarapm.games`), and the temp table `schedule` for those not played
+    yet, so a game's rest is known as soon as it's scheduled
+    """
+    con.execute(f"""
+        CREATE OR REPLACE TEMP TABLE rest AS
+        WITH g AS (
+            SELECT season, game_id, game_date, home_team_id, away_team_id
+            FROM nba.games WHERE game_type IN ({", ".join(f"'{t}'" for t in GAME_TYPES)})
+            UNION ALL
+            SELECT season, game_id, game_date, team_id, opp_team_id
+            FROM schedule
+            WHERE game_id NOT IN (SELECT game_id FROM nba.games)
+        ), t AS (
+            SELECT season, game_id, game_date, home_team_id AS team_id FROM g
+            UNION ALL
+            SELECT season, game_id, game_date, away_team_id FROM g
+        )
+        SELECT game_id, team_id,
+            greatest(date_diff('day', lag(game_date) OVER (
+                PARTITION BY season, team_id ORDER BY game_date, game_id
+            ), game_date) - 1, 0) AS rest
+        FROM t
+    """)
 
 
 def models() -> dict[str, type]:

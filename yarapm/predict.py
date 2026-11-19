@@ -44,7 +44,7 @@ from yarapm.players import PlayerRatings
 # margin RMSE of each model's daily run on 2021-2024: rapm-6833e941 (minutes
 # unknown, with aging and the early-season ridge, #50) and team-2ac45b4a.
 # `rapm_pattern` is `rapm` on those seasons, which have no injury list
-SIGMA = {"rapm": 13.66, "rapm_pattern": 13.66, "team": 13.93}
+SIGMA = {"rapm": 13.63, "rapm_pattern": 13.63, "team": 13.93}
 
 
 def pattern_model() -> PlayerRatings:

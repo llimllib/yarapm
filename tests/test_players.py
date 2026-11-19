@@ -205,3 +205,61 @@ def test_aging_carries_ratings_to_this_season():
 
     assert fit(aging=True) == pytest.approx(0, abs=1e-3)
     assert fit(aging=False) > 0.05
+
+
+def test_rest_is_fit_and_predicted():
+    """
+    A team on the second night of a back-to-back scores 2 fewer points per
+    100 possessions and allows 3 more: with `rest`, the fit learns both,
+    and a game's prediction moves by them
+    """
+    offense, defense = ratings()
+    con = duckdb.connect()
+    tables(con, offense, defense)
+    con.execute("""CREATE TEMP TABLE rest AS
+        WITH t AS (
+            SELECT season, game_id, game_date, team_id FROM results
+            UNION ALL SELECT season, game_id, game_date, opp_team_id FROM results
+        )
+        SELECT game_id, team_id, date_diff('day', lag(game_date) OVER (
+            PARTITION BY season, team_id ORDER BY game_date), game_date) - 1 AS rest
+        FROM t""")
+    assert con.execute("SELECT count(*) FROM rest WHERE rest = 0").fetchall()[0][0]
+    con.execute("""UPDATE all_segments s SET pts = pts + poss / 100 * (
+        - 2 * (SELECT coalesce(rest, 9) = 0 FROM rest r
+            WHERE r.game_id = s.game_id AND r.team_id = s.off_team_id)::INT
+        + 3 * (SELECT coalesce(rest, 9) = 0 FROM rest r
+            WHERE r.game_id = s.game_id AND r.team_id = s.def_team_id)::INT)""")
+    # the game to predict: A on a back-to-back, B rested
+    con.execute("INSERT INTO rest VALUES ('x', 'A', 0), ('x', 'B', 1), ('y', 'A', 1)")
+    model = PlayerRatings(
+        half_life=1e9,
+        ridge=1e-6,
+        season_ridge=1,
+        level_half_life=1e9,
+        prior_weight=0,
+        tempo_half_life=1e9,
+        tempo_ridge=1e-6,
+        minutes="actual",
+        aging=False,
+        rest=1,
+    )
+    assert model.settings["rest"] == 1
+    model.fit(History(con, date(2024, 6, 1), 2024))
+    assert model.rest_effects == pytest.approx(np.array([[-2], [3]]), abs=1e-3)
+
+    for game_id in "xy":
+        con.execute(
+            "INSERT INTO player_games SELECT 2024, ?, '2024-06-01', p[1], p, 48 "
+            "FROM unnest(['A0', 'A1', 'A2', 'A3', 'A4', 'B0', 'B1', 'B2', 'B3', "
+            "'B4']) t(p)",
+            [game_id],
+        )
+    tired, rested = model.predict(
+        [
+            Game(g, 2024, date(2024, 6, 1), "regular_season", "A", "B", True)
+            for g in "xy"
+        ]
+    )
+    assert tired.pts - rested.pts == pytest.approx(-2, abs=1e-3)
+    assert tired.opp_pts - rested.opp_pts == pytest.approx(3, abs=1e-3)

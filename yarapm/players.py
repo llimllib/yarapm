@@ -7,18 +7,19 @@ below) and each player pulled by `ridge` possessions toward their
 box-score prior (yarapm.prior) × `prior_weight`: 0 is plain RAPM.
 Players without segments are rated at their prior. The covariates are a league average, an offset
 for each season pulled toward it by `season_ridge` possessions, home court
-(+1 for the home offense, -1 for the away one) and a playoff term.
+(+1 for the home offense, -1 for the away one), a playoff term and
+back-to-backs (`rest`, below).
 
 The league average used to predict is the points per 100 possessions left
-over by everything else (ratings, home court and the playoff term), with
-older games weighted less by its own, shorter half life,
+over by everything else (ratings, home court, the playoff term and
+rest), with older games weighted less by its own, shorter half life,
 `level_half_life`: scoring drifts within a season, by up to several points
 a game after the trade deadline, and the season offsets lag it.
 
 A team's offense in a game, per 100 possessions: the league average ± home
-court + the playoff term + its players' offensive ratings −
-the opponents' defensive ratings, each player weighted by their share of
-the team's minutes × 5, so the weights add up to the five on the floor.
+court + the playoff term + the rest terms + its players' offensive
+ratings − the opponents' defensive ratings, each player weighted by
+their share of the team's minutes × 5, so the weights add up to the five on the floor.
 Expected score: that × adjusted tempo (yarapm.tempo) / 100.
 
 Minutes come from yarapm.minutes, by `minutes`: "actual" (the minutes
@@ -67,6 +68,21 @@ the early slope rises to 0.95. A weekly grid of `loosen` 1-10 and
 0.003). Scaling each team's strength toward the league's by 1 − a ×
 exp(−n / n0), a over 0.1-0.4 and n0 over 5-40 games, was a tie at best
 (−0.011 ± 0.007 weekly).
+
+Rest (#21) is a covariate of the same fit: with `rest` = 1, a term for
+the offense being on the second night of a back-to-back and one for the
+defense being on it (each team's days off, from the schedule:
+yarapm.harness.load_rest). Larger values add a term for each number of
+days off from 2 to `rest`, measured from one day; 0 leaves rest out. The
+fit puts a back-to-back at about −0.65 points per 100 possessions on
+offense and +1.0 on defense, about 1.7 points of margin. On the tuning
+seasons, daily, it lowers margin RMSE from 13.518 to 13.500 (known
+availability, −0.019 ± 0.009 paired) and from 13.662 to 13.630 with
+unknown availability (−0.033 ± 0.009: teams rest players on
+back-to-backs, which the projected minutes don't foresee); in the games
+with one team on a back-to-back, from 13.36 to 13.29 (known). Weekly,
+terms for 2 and 3 days off as well were no better (−0.017 and −0.016,
+against −0.020 for back-to-backs alone), their coefficients near zero.
 
 The other defaults are the best of a grid on the tuning seasons (#8), weekly
 refits, by margin RMSE: half life 180-1460 calendar days, ridge 1000-30000, prior
@@ -136,29 +152,56 @@ def aging_covariates(
     return np.c_[-off, dfn]
 
 
+def rest_levels(cap: int) -> list[int]:
+    """
+    The days of rest that get a covariate, capped at `cap`: every level but
+    1, the usual day off between games, which the others are measured from
+    """
+    return [0, *range(2, cap + 1)] if cap else []
+
+
+def rest_covariates(off_rest: np.ndarray, def_rest: np.ndarray, cap: int) -> np.ndarray:
+    """
+    2 × len(`rest_levels`) columns, the offense's then the defense's: 1
+    where the team had that many days off before the game, capped at `cap`.
+    NaN, a team's first game of a season, counts as rested (`cap`)
+    """
+    levels = np.array(rest_levels(cap))
+
+    def side(rest: np.ndarray) -> np.ndarray:
+        r = np.minimum(np.nan_to_num(np.asarray(rest, dtype=float), nan=cap), cap)
+        return (r[:, None] == levels[None, :]).astype(float)
+
+    return np.c_[side(off_rest), side(def_rest)]
+
+
 def lineups(
     history: History,
     half_life: float,
     where: str = "true",
     offseason: bool = True,
     aging: dict[str, float] | None = None,
+    rest: int = 0,
 ) -> tuple[rapm.Lineups, list[int], np.ndarray, np.ndarray]:
     """
     The segments matching `where` that still carry weight, with covariates:
-    an intercept, one column per season, home and playoffs, and with
+    an intercept, one column per season, home and playoffs, with `rest`,
+    each team's days off capped at it (`rest_covariates`), and with
     `aging` (each player's season of birth), the aging curve's
     (`aging_covariates`). Returns the seasons, each row's age in days, and
     its age for weighting: the same, or with `offseason` false, without the
     breaks between seasons
     """
     types = ", ".join(f"'{t}'" for t in PLAYOFF_TYPES)
+    segments = history.rested_segments if rest else history.segments
     t = (
-        history.segments.select(f"""
+        segments.select(f"""
         season, date_diff('day', game_date, DATE '{history.cutoff}') AS age,
         {history.age(offseason)} AS weight_age,
         off_player_ids, def_player_ids, poss, pts,
         CASE WHEN off_home THEN 1 WHEN NOT off_home THEN -1 ELSE 0 END AS home,
         game_type IN ({types}) AS playoffs
+        {", off_rest, def_rest" if rest else ""}
     """)
         .filter(f"weight_age <= {HALF_LIVES * half_life} AND ({where})")
         .to_arrow_table()
@@ -173,6 +216,15 @@ def lineups(
         t["home"].to_numpy(),
         t["playoffs"].to_numpy(),
     ]
+    if rest:
+        covariates = np.c_[
+            covariates,
+            rest_covariates(
+                t["off_rest"].to_numpy(zero_copy_only=False),
+                t["def_rest"].to_numpy(zero_copy_only=False),
+                rest,
+            ),
+        ]
     rows = rapm.Lineups.from_ids(
         t["off_player_ids"].combine_chunks(),
         t["def_player_ids"].combine_chunks(),
@@ -190,14 +242,24 @@ def lineups(
 
 
 def penalties(
-    seasons: list[int], season_ridge: float, aging_ridge: float | None = None
+    seasons: list[int],
+    season_ridge: float,
+    aging_ridge: float | None = None,
+    rest: int = 0,
 ) -> np.ndarray:
     """
     The covariates': the season offsets are penalized, and with
-    `aging_ridge`, the aging curve's
+    `aging_ridge`, the aging curve's. The rest terms aren't
     """
     aging = [] if aging_ridge is None else [aging_ridge] * 6
-    return np.r_[0, np.full(len(seasons), season_ridge), 0, 0, aging]
+    return np.r_[
+        0,
+        np.full(len(seasons), season_ridge),
+        0,
+        0,
+        np.zeros(2 * len(rest_levels(rest))),
+        aging,
+    ]
 
 
 class PlayerRatings:
@@ -223,6 +285,7 @@ class PlayerRatings:
         aging_ridge: float = 1e4,
         loosen: float = 3.0,
         loosen_games: float = 20.0,
+        rest: int = 1,
     ):
         self.half_life = half_life
         self.offseason = offseason
@@ -243,6 +306,10 @@ class PlayerRatings:
         self.aging_ridge = aging_ridge
         self.loosen = loosen
         self.loosen_games = loosen_games
+        self.rest = rest
+        # the rest terms' coefficients, offense and defense, (2, levels)
+        self.rest_effects = np.zeros((2, len(rest_levels(rest))))
+        self.history: History | None = None
         # the aging curves' coefficients, offense and defense, (2, 3)
         self.curve: np.ndarray | None = None
         self.ratings: rapm.Fit | None = None
@@ -290,10 +357,12 @@ class PlayerRatings:
                 if self.loosen
                 else {}
             )
+            | ({"rest": self.rest} if self.rest else {})
         )
 
     def fit(self, history: History) -> None:
         self.projection.fit(history)
+        self.history = history
         ridge = self.ridge
         if self.loosen:
             ridge *= 1 + self.loosen * np.exp(-self.games(history) / self.loosen_games)
@@ -303,6 +372,7 @@ class PlayerRatings:
             max(self.half_life, self.level_half_life),
             offseason=self.offseason,
             aging=births,
+            rest=self.rest,
         )
         aging_ridge = self.aging_ridge if self.aging else None
         offense = defense = None
@@ -314,7 +384,7 @@ class PlayerRatings:
         self.ratings = rapm.fit(
             rows,
             ridge,
-            penalties(seasons, self.season_ridge, aging_ridge),
+            penalties(seasons, self.season_ridge, aging_ridge, self.rest),
             offense,
             defense,
             start=self.ratings,
@@ -323,15 +393,20 @@ class PlayerRatings:
         self.home, self.playoffs = coef[1 + len(seasons)], coef[2 + len(seasons)]
         if self.aging:
             self.curve = coef[-6:].reshape(2, 3)
+        if self.rest:
+            n = 2 * len(rest_levels(self.rest))
+            self.rest_effects = coef[3 + len(seasons) : 3 + len(seasons) + n].reshape(
+                2, -1
+            )
 
         # the league average: what the ratings, home court and the playoff
         # term leave over, recent games weighing more
         levels = rows.covariates[:, : 1 + len(seasons)] @ coef[: 1 + len(seasons)]
-        rest = self.ratings.predict(rows) - levels
+        others = self.ratings.predict(rows) - levels
         w = decay(age, self.level_half_life)
         self.level = float(
             100
-            * np.sum(w * (rows.pts - rows.poss * rest / 100))
+            * np.sum(w * (rows.pts - rows.poss * others / 100))
             / np.sum(w * rows.poss)
         )
 
@@ -389,8 +464,27 @@ class PlayerRatings:
             defense += 5 * m / total * d
         return offense, defense
 
+    def rested(self, rest: int | None, opp_rest: int | None) -> float:
+        """
+        What a team's days off before a game and its opponent's add to its
+        offense, per 100 possessions
+        """
+        if not self.rest:
+            return 0.0
+        cols = rest_covariates(
+            np.array([np.nan if rest is None else rest]),
+            np.array([np.nan if opp_rest is None else opp_rest]),
+            self.rest,
+        )[0]
+        return float(cols @ self.rest_effects.ravel())
+
     def predict(self, games: list[Game]) -> list[Prediction]:
         minutes = self.projection.predict(games)
+        days = (
+            self.history.rest([g.game_id for g in games])
+            if self.rest and self.history is not None
+            else {}
+        )
 
         predictions = []
         for g in games:
@@ -402,10 +496,14 @@ class PlayerRatings:
                 minutes.get((g.game_id, g.opp_team_id), {})
             )
             poss = self.tempo.predict(g.team_id, g.opp_team_id, playoffs)
+            rest = days.get((g.game_id, g.team_id), 1)
+            opp_rest = days.get((g.game_id, g.opp_team_id), 1)
+            rested = self.rested(rest, opp_rest)
+            opp_rested = self.rested(opp_rest, rest)
             predictions.append(
                 Prediction(
-                    (base + home * self.home + off - opp_dfn) * poss / 100,
-                    (base - home * self.home + opp_off - dfn) * poss / 100,
+                    (base + home * self.home + rested + off - opp_dfn) * poss / 100,
+                    (base - home * self.home + opp_rested + opp_off - dfn) * poss / 100,
                     poss,
                     expected(minutes, g),
                 )
@@ -431,6 +529,8 @@ class OpenRapm(PlayerRatings):
         # holds them whatever its size
         settings.setdefault("aging", False)
         settings.setdefault("loosen", 0)
+        # and are compared without rest (#21), as they were before it
+        settings.setdefault("rest", 0)
         super().__init__(**settings)
         self.season = season
         self.prior = OpenRapmPrior(season)
