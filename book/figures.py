@@ -1144,9 +1144,9 @@ def availability_curves() -> Svg:
 
 # the daily `rapm` run with unknown availability on 2021-2024, the
 # scoreboard's (yarapm.harness --model rapm --cadence daily --set
-# minutes=unknown), with aging (#48), the early-season ridge (#50) and
-# segments from 2010 on
-RUN = ROOT / "out" / "runs" / "predictions" / "run=rapm-6833e941" / "data.parquet"
+# minutes=unknown), with aging (#48), the early-season ridge (#50),
+# back-to-backs (#21) and segments from 2010 on
+RUN = ROOT / "out" / "runs" / "predictions" / "run=rapm-7687fe33" / "data.parquet"
 
 
 def run_errors():

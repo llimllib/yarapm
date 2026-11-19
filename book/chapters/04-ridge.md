@@ -185,12 +185,20 @@ with their own penalties:
   from season to season (@fig:league).
 - **Home court**: $+1$ in the rows of the home team's offense and $-1$
   in the away team's, $0$ at a neutral site. Unpenalized. In the April
-  2026 fits, it's 0.93 points per 100 possessions each way, so home court
-  is worth about $2 \times 0.93 = 1.9$ points per 100, or close to two
+  2026 fits, it's 0.91 points per 100 possessions each way, so home court
+  is worth about $2 \times 0.91 = 1.8$ points per 100, or close to two
   points a game.
 - **Playoffs**: $1$ in playoff and play-in rows. Unpenalized, and
-  $-3.71$ points per 100 in the same fits: playoff offense is less
+  $-3.81$ points per 100 in the same fits: playoff offense is less
   efficient, as the Finals clincher of @ch:question suggested.
+- **Back-to-backs**: two columns, $1$ in the rows where the offense is
+  playing the second night of a back-to-back, and $1$ where the defense
+  is. Unpenalized. In the same fits they're $-0.60$ and $+1.16$: a tired
+  team scores 0.6 fewer points per 100 possessions and allows 1.2 more,
+  so it gives up about 1.8 points of margin. Each team's days off come
+  from the schedule, so they're known before the game. Columns for two
+  and three days off, against the usual one, came out near zero and
+  predicted no better, so they were left out.
 
 One more detail. Segments with no possessions (@fig:segment-possessions)
 get no weight, but they can contain points: free throws after a

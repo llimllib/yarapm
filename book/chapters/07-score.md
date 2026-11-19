@@ -4,7 +4,7 @@ label: ch:score
 ---
 
 We have a rating for every player, a level for the league, and terms for
-home court and the playoffs. To predict a game we need two more things:
+home court, the playoffs and back-to-backs. To predict a game we need two more things:
 how many minutes each player will play, and how many possessions the
 game will have. This chapter adds both, and then predicts one game from
 start to finish: Game 5 of the 2026 Finals, as the model saw it on the
@@ -37,13 +37,15 @@ In a game between $A$, at home, and $B$, with $P$ expected possessions
 each, the expected points are
 $$
 \begin{aligned}
-\hat S_A &= \tfrac{P}{100}\left(\ell + \pi + \eta + O_A - D_B\right), \\
-\hat S_B &= \tfrac{P}{100}\left(\ell + \pi - \eta + O_B - D_A\right),
+\hat S_A &= \tfrac{P}{100}\left(\ell + \pi + \eta + \rho_A + O_A - D_B\right), \\
+\hat S_B &= \tfrac{P}{100}\left(\ell + \pi - \eta + \rho_B + O_B - D_A\right),
 \end{aligned}
 $$ {#eq:expected-score}
 where $\ell$ is the league's level (@def:level), $\pi$ the playoff term if
-it's a playoff game, and $\eta$ the home-court term (@sec:covariates),
-which is zero at a neutral site.
+it's a playoff game, $\eta$ the home-court term (@sec:covariates),
+which is zero at a neutral site, and $\rho_A$ the back-to-back terms
+for $A$'s offense: the offense's if $A$ played the night before, plus
+the defense's if $B$ did.
 :::
 
 This is @eq:score with each efficiency predicted from the model. All that
@@ -132,8 +134,8 @@ it, and it can't be tested on them: its record is the live one
 
 This is the weakest part of the model, and the scoreboard shows it.
 When the harness is allowed to know who actually played, standing in
-for an injury report, the margin RMSE on 2021–2024 is 13.52; guessing,
-as it must for real predictions, it's 13.66. Knowing who plays is worth
+for an injury report, the margin RMSE on 2021–2024 is 13.50; guessing,
+as it must for real predictions, it's 13.63. Knowing who plays is worth
 more than the box-score prior.
 
 ## How many possessions
@@ -167,14 +169,15 @@ home against New York, fit on every game through June 12.
 
 | | Spurs | Knicks |
 |:--|--:|--:|
-| league level, $\ell$ | 104.68 | 104.68 |
-| playoff term, $\pi$ | $-4.07$ | $-4.07$ |
-| home court, $\pm\eta$ | $+0.93$ | $-0.93$ |
-| own offense, $O$ | $+14.52$ | $+13.63$ |
-| opponent's defense, $-D$ | $-0.06$ | $-4.36$ |
-| points per 100 possessions | 116.01 | 108.94 |
+| league level, $\ell$ | 104.60 | 104.60 |
+| playoff term, $\pi$ | $-4.00$ | $-4.00$ |
+| home court, $\pm\eta$ | $+0.92$ | $-0.92$ |
+| back-to-backs, $\rho$ | $0$ | $0$ |
+| own offense, $O$ | $+14.46$ | $+13.61$ |
+| opponent's defense, $-D$ | $-0.02$ | $-4.27$ |
+| points per 100 possessions | 115.96 | 109.01 |
 | expected possessions, $P$ | 96.2 | 96.2 |
-| **expected points** | **111.6** | **104.8** |
+| **expected points** | **111.5** | **104.8** |
 | actual points | 90 | 94 |
 
 Table: The model's prediction of Game 5 of the 2026 Finals, made from
@@ -183,9 +186,9 @@ games before June 13, 2026, built up term by term from
 
 The Spurs' offense rates slightly better than the Knicks', and their
 defense much better: Wembanyama alone, projected for 37 minutes with a
-defensive rating of $+6.1$, contributes $5 \times \tfrac{37.1}{240} \times
-6.1 \approx 4.7$ points per 100 to it. With home court, the model made
-San Antonio a 6.8-point favorite, and a 69% chance to win (@ch:evaluation
+defensive rating of $+6.0$, contributes $5 \times \tfrac{37.1}{240} \times
+6.0 \approx 4.6$ points per 100 to it. With home court, the model made
+San Antonio a 6.7-point favorite, and a 69% chance to win (@ch:evaluation
 explains the conversion).
 
 ::: {.remark #rem:terms}
@@ -199,9 +202,10 @@ changed by a hundredth of a point. This is @prop:singular at work:
 shifting the ratings one way and the level the other predicts the same
 scores, and the data only pins down the combination. Here the prior,
 not the data, decided where the level sits. @tbl:game5 has since been
-refit, after more play-by-play arrived and two changes to the model
-(games aged in days of the season, and players aging, @sec:aging): the
-level is 0.7 lower than it was then, and the margin 0.5 points wider.
+refit, after more play-by-play arrived and changes to the model (games
+aged in days of the season, players aging, @sec:aging, and the
+back-to-back terms): the level is 0.8 lower than it was then, and the
+margin 0.4 points wider.
 :::
 
 The Knicks won by four. The game was slower than predicted, about 90
@@ -222,8 +226,8 @@ open experiments in the project.
 
 ::: code
 The expected score, @eq:expected-score, is
-[`PlayerRatings.predict`](code:yarapm/players.py#L352), and team
-strength is [`strength`](code:yarapm/players.py#L337), which takes
+[`PlayerRatings.predict`](code:yarapm/players.py#L481), and team
+strength is [`strength`](code:yarapm/players.py#L452), which takes
 each team's projected minutes and normalizes them, so it works with any
 total. Minutes are [`ProjectedMinutes`](code:yarapm/minutes.py#L115):
 minutes when playing are one SQL query with a window function numbering
@@ -249,7 +253,7 @@ team's expected margin fall, at 100 possessions?
 :::
 
 ::: {.exercise #exr:wemby}
-Using @tbl:game5, how much of the Spurs' 6.8-point expected margin came
+Using @tbl:game5, how much of the Spurs' 6.7-point expected margin came
 from home court? From the difference in defense? If Wembanyama had been
 ruled out that morning, and the 37 projected minutes had gone to players
 with an average defensive rating of 0 and offensive rating of $+1$, what
