@@ -77,6 +77,21 @@ EARLY_GAMES = 20
 EASTERN = ZoneInfo("America/New_York")
 
 TRADE_DEADLINES = {
+    # checked against the data: players who change teams play their last
+    # game for the old one in the week before, and next to none after
+    1997: date(1997, 2, 20),
+    1998: date(1998, 2, 19),
+    1999: date(1999, 3, 11),
+    2000: date(2000, 2, 24),
+    2001: date(2001, 2, 22),
+    2002: date(2002, 2, 21),
+    2003: date(2003, 2, 20),
+    2004: date(2004, 2, 19),
+    2005: date(2005, 2, 24),
+    2006: date(2006, 2, 23),
+    2007: date(2007, 2, 22),
+    2008: date(2008, 2, 21),
+    2009: date(2009, 2, 19),
     2010: date(2010, 2, 18),
     2011: date(2011, 2, 24),
     2012: date(2012, 3, 15),

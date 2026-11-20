@@ -3,8 +3,8 @@ The box-score prior (#7): each player's offensive and defensive rating as of
 a date, estimated from their box scores, which RAPM (yarapm.rapm) pulls
 toward.
 
-Rates: per 100 of the player's possessions, from nba.player_game_logs back
-to 2010, with older games weighted less (`half_life`, in days), each shrunk
+Rates: per 100 of the player's possessions, from nba.player_game_logs (from
+1997), with older games weighted less (`half_life`, in days), each shrunk
 toward the average of players of similar height (a stand-in for position,
 which we don't have) by STABILIZE: lightly for rates that settle quickly
 (rebounds) and more for slow ones (steals, three-point percentage).
@@ -14,12 +14,13 @@ only, so nothing from the season being predicted goes into them:
 
 - The box formula: offense and defense, separately, from the rates, usage ×
   true shooting, minutes per game, height and draft position. Fit to
-  plain RAPM (a zero prior) over every season with segments before this
-  one, each player weighted by possessions. For 2021, that's 2019-20
+  plain RAPM (a zero prior) over the seasons with segments before this
+  one, the last `target_seasons` (`yarapm.players`), each player weighted
+  by possessions
 - The rookie formula: from height and draft position alone, for players
   with no box scores. Fit to the box formula's estimate of each rookie
-  season from 2011 on (2010 is the first season of box scores, so its
-  rookies aren't known)
+  season after the first season of box scores (whose rookies aren't
+  known)
 
 A player's prior blends the two by their possessions: the box formula with
 the weight of their (decayed) possessions and the rookie formula with

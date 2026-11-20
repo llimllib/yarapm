@@ -47,17 +47,18 @@ game before that day. Since nba_data updates every four hours, the files
 can change during the day as a night's games come in.
 
 **History:** the daily datasets (`ratings_daily`, `team_ratings_daily`,
-`team_players_daily`) go back to 2014 (2013-14), so a player's or team's
+`team_players_daily`) go back to 1999 (1998-99), so a player's or team's
 ratings can be followed across seasons. Every row is the current model's
 view of its day, fit only on the games before it, as if it had been run
 that day: when the model changes, every season is rebuilt with it, and a
 season's files never mix model versions (`model_version`). The first
 season rated is the first with two seasons of play-by-play before it,
 since the box-score prior learns from earlier seasons; nba_data's
-play-by-play starts in 2012 and is being backfilled toward 2010, and the
-history will start earlier as it lands. The first seasons rest on less
-data than later ones: their prior learned from fewer seasons, and their
-ratings from fewer games before them.
+play-by-play starts in 1997 (1996-97), as far back as the NBA's goes. The
+first seasons rest on less data than later ones: through 2006, their prior
+learned from fewer than the ten seasons it uses later, and through about
+2005, their ratings from fewer seasons of games before them. 1999 was
+shortened to 50 games by the lockout.
 
 ## Datasets
 

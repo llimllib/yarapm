@@ -85,6 +85,15 @@ with one team on a back-to-back, from 13.36 to 13.29 (known). Weekly,
 terms for 2 and 3 days off as well were no better (−0.017 and −0.016,
 against −0.020 for back-to-backs alone), their coefficients near zero.
 
+The box-score prior is fit to plain RAPM over the `target_seasons` seasons
+before this one (`target`; None for every one). With play-by-play from
+1997, every one is up to 30 seasons, and that fit's rows and memory grew
+every year (2.1M rows for 2026). On the tuning seasons, daily, 10 is a tie
+with every season: margin RMSE 13.507 vs 13.509 (known availability,
+−0.002 ± 0.005 paired) and 13.507 vs 13.507 (unknown), total RMSE
+18.357 vs 18.380 and 18.412 vs 18.435. Weekly, 6 was a tie too (13.517 vs
+13.518 with 10 and 13.520 with every one, #32).
+
 The other defaults are the best of a grid on the tuning seasons (#8), weekly
 refits, by margin RMSE: half life 180-1460 calendar days, ridge 1000-30000, prior
 weight 0.7-1.6, box half life 180-730 and level half life 7-60. It's flat
@@ -292,6 +301,7 @@ class PlayerRatings:
         loosen: float = 3.0,
         loosen_games: float = 20.0,
         rest: int = 1,
+        target_seasons: int | None = 10,
     ):
         self.half_life = half_life
         self.offseason = offseason
@@ -315,6 +325,7 @@ class PlayerRatings:
         self.loosen = loosen
         self.loosen_games = loosen_games
         self.rest = rest
+        self.target_seasons = target_seasons
         # the rest terms' coefficients, offense and defense, (2, levels)
         self.rest_effects = np.zeros((2, len(rest_levels(rest))))
         self.history: History | None = None
@@ -368,6 +379,7 @@ class PlayerRatings:
                 else {}
             )
             | ({"rest": self.rest} if self.rest else {})
+            | ({"target_seasons": self.target_seasons} if self.target_seasons else {})
         )
 
     def fit(self, history: History) -> None:
@@ -442,10 +454,12 @@ class PlayerRatings:
 
     def target(self, history: History) -> tuple[rapm.Fit, list[int]]:
         """
-        Plain RAPM over every season before this one, unweighted, which the
-        box-score prior is fit to
+        Plain RAPM over the `target_seasons` seasons before this one (every
+        one, if None), unweighted, which the box-score prior is fit to
         """
         where = "true" if history.season is None else f"season < {history.season}"
+        if history.season is not None and self.target_seasons:
+            where += f" AND season >= {history.season - self.target_seasons}"
         rows, seasons, _, _ = lineups(history, 1e12, where)
         return rapm.fit(
             rows, TARGET_RIDGE, penalties(seasons, self.season_ridge)
@@ -549,4 +563,5 @@ class OpenRapm(PlayerRatings):
     def settings(self) -> dict[str, Any]:
         settings = super().settings
         del settings["box_half_life"]
+        settings.pop("target_seasons", None)
         return {"season": self.season} | settings
