@@ -170,7 +170,9 @@ jobs:
     needs: publish
     if: needs.publish.outputs.built == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    # every season from 1999 is about 80-90 minutes with --jobs 2; margin
+    # for the runner's speed and the seasons to come
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v7
 

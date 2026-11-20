@@ -121,6 +121,55 @@ def design(rows: Lineups) -> sp.csr_matrix:
     )
 
 
+def players_design(off: np.ndarray, dfn: np.ndarray, k: int) -> sp.csr_matrix:
+    """
+    `design` without the covariates, for rows of `off` and `dfn` among `k`
+    players: each player's offense, then their defense
+    """
+    n = len(off)
+    cols = np.c_[off, k + dfn]
+    vals = np.c_[np.ones((n, 5)), -np.ones((n, 5))]
+    return sp.csr_matrix(
+        (vals.ravel(), cols.ravel(), np.arange(0, n * 10 + 1, 10)),
+        shape=(n, 2 * k),
+    )
+
+
+# rows at a time in `normal_equations`, to bound the copies it makes
+CHUNK = 200_000
+
+
+def normal_equations(
+    rows: Lineups, w: np.ndarray, y: np.ndarray
+) -> tuple[sp.csr_matrix, np.ndarray]:
+    """
+    X'WX and X'Wy for `design(rows)`, with weights `w`, by blocks: the
+    covariates are dense, so their block is a dense product and only the
+    players' block, ten entries a row, is a sparse one. Building X'WX from
+    `design`, with its covariates stored as sparse entries (zeros included),
+    costs the square of the row's length, and was most of the fit's time.
+    CHUNK rows at a time, so the weighted copies stay small
+    """
+    c = rows.covariates.shape[1]
+    k = len(rows.players)
+    cc = np.zeros((c, c))
+    pc = np.zeros((2 * k, c))
+    pp = sp.csr_matrix((2 * k, 2 * k))
+    b = np.zeros(c + 2 * k)
+    for i in range(0, len(w), CHUNK):
+        s = slice(i, i + CHUNK)
+        C = rows.covariates[s]
+        P = players_design(rows.off[s], rows.dfn[s], k)
+        WC = C * w[s, None]
+        cc += C.T @ WC
+        pc += P.T @ WC
+        pp = pp + (P.T @ P.multiply(w[s, None]).tocsr())
+        wy = w[s] * y[s]
+        b += np.r_[C.T @ wy, P.T @ wy]
+    A = sp.bmat([[sp.csr_matrix(cc), sp.csr_matrix(pc.T)], [sp.csr_matrix(pc), pp]])
+    return A.tocsr(), b
+
+
 def fit(
     rows: Lineups,
     ridge: float,
@@ -144,26 +193,18 @@ def fit(
     k = len(rows.players)
     prior_offense = np.zeros(k) if prior_offense is None else prior_offense
     prior_defense = np.zeros(k) if prior_defense is None else prior_defense
+    # rows without possessions get no weight, rather than being copied out
     has = rows.poss > 0
-    sub = Lineups(
-        rows.players,
-        rows.off[has],
-        rows.dfn[has],
-        rows.poss[has],
-        rows.pts[has],
-        rows.weight[has],
-        rows.covariates[has],
-    )
-    X = design(sub)
-    w = sub.poss * sub.weight
-    prior = prior_offense[sub.off].sum(axis=1) - prior_defense[sub.dfn].sum(axis=1)
-    y = 100 * sub.pts / sub.poss - prior
+    w = np.where(has, rows.poss * rows.weight, 0.0)
+    prior = prior_offense[rows.off].sum(axis=1) - prior_defense[rows.dfn].sum(axis=1)
+    rate = np.divide(100 * rows.pts, rows.poss, out=np.zeros(len(w)), where=has)
+    y = np.where(has, rate - prior, 0.0)
 
     c = rows.covariates.shape[1]
     penalty = np.r_[np.asarray(covariate_penalty, dtype=float), np.full(2 * k, ridge)]
     # a tiny penalty everywhere, so a column of zeros gets a coefficient of 0
-    A = (X.T @ X.multiply(w[:, None])).tocsr() + sp.diags(penalty + 1e-9)
-    b = X.T @ (w * y)
+    A, b = normal_equations(rows, w, y)
+    A = A + sp.diags(penalty + 1e-9)
     precondition = sp.diags(1 / A.diagonal())
     x0 = None
     if start is not None and len(start.coef) == c:

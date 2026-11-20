@@ -146,10 +146,14 @@ def aging_covariates(
     the curve between the two ages. Players without an age don't age
     """
     b = np.array([born.get(p, np.nan) for p in rows.players])
-    off = age_basis(now - b[rows.off]) - age_basis(season[:, None] - b[rows.off])
-    dfn = age_basis(now - b[rows.dfn]) - age_basis(season[:, None] - b[rows.dfn])
-    off = np.nan_to_num(off).sum(axis=1)
-    dfn = np.nan_to_num(dfn).sum(axis=1)
+    # the change for each player and season, (players, seasons, 3), then
+    # gathered for each row: far cheaper than the basis for every row
+    seasons, s = np.unique(season, return_inverse=True)
+    change = np.nan_to_num(
+        age_basis(now - b)[:, None, :] - age_basis(seasons[None, :] - b[:, None])
+    )
+    off = change[rows.off, s[:, None]].sum(axis=1)
+    dfn = change[rows.dfn, s[:, None]].sum(axis=1)
     return np.c_[-off, dfn]
 
 
