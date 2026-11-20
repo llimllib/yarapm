@@ -102,6 +102,7 @@ weights of 1-1.3 are within 0.03 points, so the simplest were kept. The
 level half life only moves totals.
 """
 
+from datetime import date, timedelta
 from typing import Any
 
 import numpy as np
@@ -197,18 +198,23 @@ def lineups(
     offseason: bool = True,
     aging: dict[str, float] | None = None,
     rest: int = 0,
+    seasons: list[int] | None = None,
+    since: date | None = None,
 ) -> tuple[rapm.Lineups, list[int], np.ndarray, np.ndarray]:
     """
-    The segments matching `where` that still carry weight, with covariates:
-    an intercept, one column per season, home and playoffs, with `rest`,
-    each team's days off capped at it (`rest_covariates`), and with
-    `aging` (each player's season of birth), the aging curve's
-    (`aging_covariates`). Returns the seasons, each row's age in days, and
-    its age for weighting: the same, or with `offseason` false, without the
-    breaks between seasons
+    The segments matching `where` that still carry weight, oldest first,
+    with covariates: an intercept, one column per season (`seasons`, or
+    those in the rows), home and playoffs, with `rest`, each team's days
+    off capped at it (`rest_covariates`), and with `aging` (each player's
+    season of birth), the aging curve's (`aging_covariates`). Returns the
+    seasons, each row's age in days, and its age for weighting: the same,
+    or with `offseason` false, without the breaks between seasons. `since`
+    leaves out the games before it, read from fewer files than `where`
     """
     types = ", ".join(f"'{t}'" for t in PLAYOFF_TYPES)
     segments = history.rested_segments if rest else history.segments
+    if since is not None:
+        segments = segments.filter(f"game_date >= DATE '{since}'")
     t = (
         segments.select(f"""
         season, date_diff('day', game_date, DATE '{history.cutoff}') AS age,
@@ -219,12 +225,16 @@ def lineups(
         {", off_rest, def_rest" if rest else ""}
     """)
         .filter(f"weight_age <= {HALF_LIVES * half_life} AND ({where})")
+        .order("age DESC")
         .to_arrow_table()
     )
     season = t["season"].to_numpy()
     age = t["age"].to_numpy().astype(float)
     weight_age = t["weight_age"].to_numpy().astype(float)
-    seasons = sorted(set(season.tolist()))
+    if seasons is None:
+        seasons = sorted(set(season.tolist()))
+    elif not set(season.tolist()) <= set(seasons):
+        raise ValueError(f"rows from seasons not in {seasons}")
     covariates = np.c_[
         np.ones(len(season)),
         season[:, None] == np.array(seasons)[None, :],
@@ -254,6 +264,232 @@ def lineups(
             rows.covariates, aging_covariates(rows, season, aging, now)
         ]
     return rows, seasons, age, weight_age
+
+
+# room for this share more rows than a `Window` is built with, so that its
+# buffers are rarely moved
+WINDOW_ROOM = 0.25
+
+
+class Window:
+    """
+    A season's fit's rows and normal equations, kept so that the next fit,
+    on a later cutoff in the same season, only adds the games since and
+    takes away the ones that have aged out, rather than building them
+    again: every row's age for weighting grows by the same number of days
+    between two cutoffs in a season, so every weight is scaled by the same
+    factor. Building them was most of each day's fit.
+
+    The covariates are fixed for the season: a column for each season in
+    the rows when it's built, and this one, whose column is all zeros (and
+    so its coefficient 0) until its first games. A season whose rows have
+    all aged out keeps its column, all zeros. Players whose rows have
+    aged out keep theirs too, rated at their prior.
+
+    The rows, oldest first, are kept in buffers with room for more, and
+    `rows`, `age` and `weight_age` are views of them: rows that age out
+    move the start, and new ones are written after the end. Copying every
+    row into new arrays each day instead grew the process's memory by
+    about 100MB a day, as freed arrays of slightly different sizes weren't
+    reused
+    """
+
+    def __init__(
+        self,
+        history: History,
+        half_life: float,
+        offseason: bool,
+        aging: bool,
+        rest: int,
+    ):
+        self.half_life = half_life
+        self.offseason = offseason
+        self.aging = aging
+        self.rest = rest
+        self.history = history
+        rows, seasons, age, weight_age = lineups(
+            history,
+            half_life,
+            offseason=offseason,
+            aging=born(history) if aging else None,
+            rest=rest,
+        )
+        if history.season is not None and history.season not in seasons:
+            at = 1 + sum(s < history.season for s in seasons)
+            rows.covariates = np.insert(rows.covariates, at, 0.0, axis=1)
+            seasons = sorted([*seasons, history.season])
+        self.seasons = seasons
+        self.normal = rapm.Normal(rows.covariates.shape[1])
+        # in order, so the rows' indices are the fit's
+        self.normal.codes(rows.players)
+        self.normal.add(
+            rows.off,
+            rows.dfn,
+            rows.covariates,
+            *rapm.weights(rows.poss, rows.pts, rows.weight),
+        )
+        self.buffers: dict[str, np.ndarray] = {}
+        self.start = self.end = 0
+        self.store(
+            {
+                "off": rows.off,
+                "dfn": rows.dfn,
+                "poss": rows.poss,
+                "pts": rows.pts,
+                "weight": rows.weight,
+                "covariates": rows.covariates,
+                "age": age,
+                "weight_age": weight_age,
+            }
+        )
+
+    def store(self, arrays: dict[str, np.ndarray]) -> None:
+        """New buffers holding `arrays`, with room for more"""
+        n = len(arrays["poss"])
+        room = n + int(WINDOW_ROOM * n) + 1000
+        self.buffers = {
+            k: np.empty((room, *a.shape[1:]), dtype=a.dtype) for k, a in arrays.items()
+        }
+        for k, a in arrays.items():
+            self.buffers[k][:n] = a
+        self.start, self.end = 0, n
+        self.views()
+
+    def views(self) -> None:
+        b = {k: v[self.start : self.end] for k, v in self.buffers.items()}
+        self.rows = rapm.Lineups(
+            players=list(self.normal.players),
+            off=b["off"],
+            dfn=b["dfn"],
+            poss=b["poss"],
+            pts=b["pts"],
+            weight=b["weight"],
+            covariates=b["covariates"],
+        )
+        self.age = b["age"]
+        self.weight_age = b["weight_age"]
+
+    def append(self, drop: int, arrays: dict[str, np.ndarray]) -> None:
+        """Drop the oldest `drop` rows and add `arrays` after the newest"""
+        start, end = self.start + drop, self.end
+        n = len(arrays["poss"])
+        room = len(self.buffers["poss"])
+        if end + n > room:
+            if end - start + n > room:
+                self.store(
+                    {
+                        k: np.concatenate([v[start:end], arrays[k]])
+                        for k, v in self.buffers.items()
+                    }
+                )
+                return
+            # move the rows to the front, a block at a time so the copies
+            # don't overlap
+            keep = end - start
+            for k, v in self.buffers.items():
+                for i in range(0, keep, start):
+                    j = min(i + start, keep)
+                    v[i:j] = v[start + i : start + j]
+            start, end = 0, keep
+        for k, v in self.buffers.items():
+            v[end : end + n] = arrays[k]
+        self.start, self.end = start, end + n
+        self.views()
+
+    def shift(self, history: History) -> int | None:
+        """
+        How many days every row's age for weighting grows from this
+        window's cutoff to `history`'s, or None if it isn't the same for
+        every row: probed at the oldest row's game day and the day before
+        the cutoff
+        """
+        old = self.history
+        oldest = old.cutoff - timedelta(days=int(self.age.max(initial=1)))
+        probes = f"(DATE '{oldest}'), (DATE '{old.cutoff - timedelta(days=1)}')"
+        shifts = {
+            a - b
+            for (a,), (b,) in zip(
+                *(
+                    h.con.sql(
+                        f"SELECT {h.age(self.offseason)} "
+                        f"FROM (VALUES {probes}) v(game_date)"
+                    ).fetchall()
+                    for h in (history, old)
+                ),
+                strict=True,
+            )
+        }
+        return shifts.pop() if len(shifts) == 1 else None
+
+    def reusable(self, history: History) -> bool:
+        old = self.history
+        return (
+            history.season is not None
+            and history.con is old.con
+            and history.season == old.season
+            and history.cutoff >= old.cutoff
+        )
+
+    def advance(self, history: History, shift: int) -> None:
+        """
+        Move the window to `history`'s cutoff, `shift` days on for
+        weighting: scale every weight, take away the rows that have aged
+        out, and add the games since
+        """
+        rows = self.rows
+        days = (history.cutoff - self.history.cutoff).days
+        factor = float(decay(np.array(shift), self.half_life))
+        self.normal.scale(factor)
+        rows.weight *= factor
+        self.weight_age += shift
+        self.age += days
+
+        # the oldest rows, first, as they're ordered by age
+        limit = HALF_LIVES * self.half_life
+        old = int(np.count_nonzero(self.weight_age > limit))
+        if not (self.weight_age[:old] > limit).all():
+            raise ValueError("the window's rows aren't oldest first")
+        if old:
+            s = slice(0, old)
+            w, rate = rapm.weights(rows.poss[s], rows.pts[s], rows.weight[s])
+            self.normal.add(rows.off[s], rows.dfn[s], rows.covariates[s], -w, rate)
+
+        new, _, age, weight_age = lineups(
+            history,
+            self.half_life,
+            offseason=self.offseason,
+            aging=born(history) if self.aging and days else None,
+            rest=self.rest,
+            seasons=self.seasons,
+            since=self.history.cutoff,
+        )
+        if self.aging and not len(new.poss):
+            # no games since: no aging columns either, but the same width
+            new.covariates = np.zeros((0, rows.covariates.shape[1]))
+        codes = self.normal.codes(new.players)
+        off, dfn = codes[new.off], codes[new.dfn]
+        self.normal.add(
+            off, dfn, new.covariates, *rapm.weights(new.poss, new.pts, new.weight)
+        )
+        self.append(
+            old,
+            {
+                "off": off,
+                "dfn": dfn,
+                "poss": new.poss,
+                "pts": new.pts,
+                "weight": new.weight,
+                "covariates": new.covariates,
+                "age": age,
+                "weight_age": weight_age,
+            },
+        )
+        self.history = history
+
+
+# rows older than this many of the league average's half lives are left out
+# of it: their weights are under 2^-64 of the newest's
+LEVEL_HALF_LIVES = 64
 
 
 def penalties(
@@ -330,6 +566,7 @@ class PlayerRatings:
         # the rest terms' coefficients, offense and defense, (2, levels)
         self.rest_effects = np.zeros((2, len(rest_levels(rest))))
         self.history: History | None = None
+        self.window: Window | None = None
         # the aging curves' coefficients, offense and defense, (2, 3)
         self.curve: np.ndarray | None = None
         self.ratings: rapm.Fit | None = None
@@ -389,28 +626,39 @@ class PlayerRatings:
         ridge = self.ridge
         if self.loosen:
             ridge *= 1 + self.loosen * np.exp(-self.games(history) / self.loosen_games)
-        births = born(history) if self.aging else None
-        rows, seasons, age, _ = lineups(
-            history,
-            max(self.half_life, self.level_half_life),
-            offseason=self.offseason,
-            aging=births,
-            rest=self.rest,
-        )
+        window = self.window
+        shift = None
+        if window is not None and window.reusable(history):
+            shift = window.shift(history)
+        if window is not None and shift is not None:
+            window.advance(history, shift)
+        else:
+            window = self.window = Window(
+                history,
+                max(self.half_life, self.level_half_life),
+                self.offseason,
+                self.aging,
+                self.rest,
+            )
+        rows, seasons = window.rows, window.seasons
         aging_ridge = self.aging_ridge if self.aging else None
-        offense = defense = None
+        offense = defense = np.zeros(len(rows.players))
         if self.prior_weight:
             self.prior.fit(history, lambda: self.target(history))
-            priors = np.array([self.prior.prior(p) for p in rows.players])
+            priors = np.array(
+                [self.prior.prior(p) for p in rows.players], dtype=float
+            ).reshape(-1, 2)
             offense = self.prior_weight * priors[:, 0]
             defense = self.prior_weight * priors[:, 1]
-        self.ratings = rapm.fit(
-            rows,
+        self.ratings = window.normal.solve(
             ridge,
             penalties(seasons, self.season_ridge, aging_ridge, self.rest),
             offense,
             defense,
             start=self.ratings,
+        )
+        self.ratings.coef += rapm.loose_points(
+            rows.covariates, rows.poss, rows.pts, rows.weight
         )
         coef = self.ratings.coef
         self.home, self.playoffs = coef[1 + len(seasons)], coef[2 + len(seasons)]
@@ -423,14 +671,22 @@ class PlayerRatings:
             )
 
         # the league average: what the ratings, home court and the playoff
-        # term leave over, recent games weighing more
-        levels = rows.covariates[:, : 1 + len(seasons)] @ coef[: 1 + len(seasons)]
-        others = self.ratings.predict(rows) - levels
-        w = decay(age, self.level_half_life)
+        # term leave over, recent games weighing more. The rows are oldest
+        # first, so the recent ones are the last
+        newest = window.age[-1] if len(window.age) else 0.0
+        oldest = newest + LEVEL_HALF_LIVES * self.level_half_life
+        latest = slice(int(np.searchsorted(-window.age, -oldest, "left")), None)
+        n = 1 + len(seasons)
+        others = (
+            rows.covariates[latest, n:] @ coef[n:]
+            + self.ratings.offense[rows.off[latest]].sum(axis=1)
+            - self.ratings.defense[rows.dfn[latest]].sum(axis=1)
+        )
+        w = decay(window.age[latest], self.level_half_life)
         self.level = float(
             100
-            * np.sum(w * (rows.pts - rows.poss * others / 100))
-            / np.sum(w * rows.poss)
+            * np.sum(w * (rows.pts[latest] - rows.poss[latest] * others / 100))
+            / np.sum(w * rows.poss[latest])
         )
 
         r = recent(history, self.tempo.half_life)

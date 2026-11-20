@@ -5,6 +5,7 @@ import duckdb
 import numpy as np
 import pytest
 
+from yarapm import rapm
 from yarapm.harness import Game, History
 from yarapm.players import PlayerRatings, age_basis
 from yarapm.predict import live_models
@@ -268,3 +269,64 @@ def test_rest_is_fit_and_predicted():
     )
     assert tired.pts - rested.pts == pytest.approx(-2, abs=1e-3)
     assert tired.opp_pts - rested.opp_pts == pytest.approx(3, abs=1e-3)
+
+
+def test_refit_day_by_day_matches_a_fresh_fit(monkeypatch):
+    """
+    A model refit every day keeps its rows and normal equations (`Window`)
+    and updates them: the same ratings as a model fit fresh on each day,
+    as rows are added and the last season's age out
+    """
+    # solved closely, so the two differ only by rounding
+    monkeypatch.setattr(rapm, "TOLERANCE", 1e-13)
+    now_off, now_def = ratings()
+    rng = np.random.default_rng(5)
+    con = duckdb.connect()
+    tables(con, now_off, now_def)
+    tables(con, *ratings(seed=6), seed=7, season=2023, create=False)
+    con.execute("CREATE TEMP TABLE bio (player_id VARCHAR, born DOUBLE)")
+    con.executemany(
+        "INSERT INTO bio VALUES (?, ?)",
+        [(p, float(rng.integers(1985, 2004))) for p in now_off],
+    )
+
+    def model():
+        # 8 half lives of 4 days: the 2023 games age out in 2024's first weeks
+        return PlayerRatings(
+            half_life=4,
+            ridge=50,
+            season_ridge=100,
+            level_half_life=2,
+            prior_weight=0,
+            tempo_half_life=1e9,
+            tempo_ridge=1e-6,
+            minutes="actual",
+            aging_ridge=1,
+        )
+
+    daily = model()
+    days = [date(2023, 11, 1) + timedelta(days=i) for i in range(0, 36, 3)]
+    rows = []
+    for day in days:
+        history = History(con, day, 2024)
+        daily.fit(history)
+        if day == days[0]:
+            window = daily.window
+        assert daily.window is window and window is not None
+        # 2023's rows: its season's column
+        rows.append(
+            int(window.rows.covariates[:, 1 + window.seasons.index(2023)].sum())
+        )
+        fresh = model()
+        fresh.fit(history)
+        assert daily.ratings is not None and fresh.ratings is not None
+        players = sorted(now_off)
+        got = np.array([daily.ratings.rating(p) for p in players])
+        want = np.array([fresh.ratings.rating(p) for p in players])
+        assert got == pytest.approx(want, abs=1e-6)
+        assert daily.level == pytest.approx(fresh.level, abs=1e-6)
+        assert daily.home == pytest.approx(fresh.home, abs=1e-6)
+        assert daily.curve == pytest.approx(fresh.curve, abs=1e-6)
+    # the last season's rows aged out, and this season's were added
+    assert rows[0] > 0 and rows[-1] == 0
+    assert len(window.rows.poss) > 0

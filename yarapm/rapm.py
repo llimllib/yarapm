@@ -17,7 +17,10 @@ their data toward their prior, roughly.
 
 The normal equations are sparse and well conditioned by the penalty, so they
 are solved by conjugate gradients, started from the previous solution when
-refitting every game day.
+refitting every game day. They're kept in `Normal`, which rows can be added
+to and taken from, and whose weights can all be scaled at once, so a fit
+refit every day can update them rather than build them again
+(yarapm.players).
 """
 
 from dataclasses import dataclass
@@ -67,6 +70,10 @@ class Lineups:
         codes = np.asarray(flat.indices, dtype=np.int64)
         if len(codes) != 10 * n:
             raise ValueError("every row needs five players a side")
+        covariates = np.asarray(covariates, dtype=float)
+        # (n, c), and with no rows, (0, c) if c is known
+        width = covariates.shape[1] if covariates.ndim == 2 else -1
+        covariates = covariates.reshape(n, width if n or width >= 0 else 0)
         return cls(
             players=flat.dictionary.to_pylist(),
             off=codes[: 5 * n].reshape(n, 5),
@@ -74,7 +81,7 @@ class Lineups:
             poss=np.asarray(poss, dtype=float),
             pts=np.asarray(pts, dtype=float),
             weight=np.asarray(weight, dtype=float),
-            covariates=np.asarray(covariates, dtype=float).reshape(n, -1),
+            covariates=covariates,
         )
 
 
@@ -123,11 +130,12 @@ def design(rows: Lineups) -> sp.csr_matrix:
 
 def players_design(off: np.ndarray, dfn: np.ndarray, k: int) -> sp.csr_matrix:
     """
-    `design` without the covariates, for rows of `off` and `dfn` among `k`
-    players: each player's offense, then their defense
+    The players' columns of `design`, interleaved, for rows of `off` and
+    `dfn` among `k` players: player i's offense is column 2i and their
+    defense 2i + 1, so a new player's columns go at the end
     """
     n = len(off)
-    cols = np.c_[off, k + dfn]
+    cols = np.c_[2 * off, 2 * dfn + 1]
     vals = np.c_[np.ones((n, 5)), -np.ones((n, 5))]
     return sp.csr_matrix(
         (vals.ravel(), cols.ravel(), np.arange(0, n * 10 + 1, 10)),
@@ -135,39 +143,162 @@ def players_design(off: np.ndarray, dfn: np.ndarray, k: int) -> sp.csr_matrix:
     )
 
 
-# rows at a time in `normal_equations`, to bound the copies it makes
+# rows at a time in `Normal.add`, to bound the copies it makes
 CHUNK = 200_000
 
 
-def normal_equations(
-    rows: Lineups, w: np.ndarray, y: np.ndarray
-) -> tuple[sp.csr_matrix, np.ndarray]:
+class Normal:
     """
-    X'WX and X'Wy for `design(rows)`, with weights `w`, by blocks: the
-    covariates are dense, so their block is a dense product and only the
-    players' block, ten entries a row, is a sparse one. Building X'WX from
-    `design`, with its covariates stored as sparse entries (zeros included),
-    costs the square of the row's length, and was most of the fit's time.
-    CHUNK rows at a time, so the weighted copies stay small
+    The normal equations of a fit with `covariates` covariates, without the
+    prior or the penalty: X'WX and X'W·rate over the rows added and not
+    taken away, by blocks. The covariates are dense, so their block is a
+    dense product and only the players' block, ten entries a row, is a
+    sparse one; the players' columns are interleaved (`players_design`), so
+    players can be added. Building X'WX from `design`, with its covariates
+    stored as sparse entries (zeros included), costs the square of the
+    row's length.
+
+    The prior enters at the solve: X'W(rate − prior) is X'W·rate less the
+    players' columns of X'WX times the prior
     """
-    c = rows.covariates.shape[1]
-    k = len(rows.players)
-    cc = np.zeros((c, c))
-    pc = np.zeros((2 * k, c))
-    pp = sp.csr_matrix((2 * k, 2 * k))
-    b = np.zeros(c + 2 * k)
-    for i in range(0, len(w), CHUNK):
-        s = slice(i, i + CHUNK)
-        C = rows.covariates[s]
-        P = players_design(rows.off[s], rows.dfn[s], k)
-        WC = C * w[s, None]
-        cc += C.T @ WC
-        pc += P.T @ WC
-        pp = pp + (P.T @ P.multiply(w[s, None]).tocsr())
-        wy = w[s] * y[s]
-        b += np.r_[C.T @ wy, P.T @ wy]
-    A = sp.bmat([[sp.csr_matrix(cc), sp.csr_matrix(pc.T)], [sp.csr_matrix(pc), pp]])
-    return A.tocsr(), b
+
+    def __init__(self, covariates: int):
+        self.c = covariates
+        # each player's index, in the order they were added
+        self.players: dict[str, int] = {}
+        self.cc = np.zeros((covariates, covariates))
+        self.pc = np.zeros((0, covariates))
+        self.pp = sp.csr_matrix((0, 0))
+        self.bc = np.zeros(covariates)
+        self.bp = np.zeros(0)
+
+    def codes(self, players: list[str]) -> np.ndarray:
+        """Each of `players`' index, adding the ones not yet seen"""
+        out = np.empty(len(players), dtype=np.int64)
+        for i, p in enumerate(players):
+            j = self.players.get(p)
+            if j is None:
+                j = self.players[p] = len(self.players)
+            out[i] = j
+        k2 = 2 * len(self.players)
+        if k2 > len(self.bp):
+            grow = k2 - len(self.bp)
+            self.pc = np.r_[self.pc, np.zeros((grow, self.c))]
+            self.bp = np.r_[self.bp, np.zeros(grow)]
+            self.pp.resize((k2, k2))
+        return out
+
+    def add(
+        self,
+        off: np.ndarray,
+        dfn: np.ndarray,
+        covariates: np.ndarray,
+        w: np.ndarray,
+        rate: np.ndarray,
+    ) -> None:
+        """
+        Rows of `off` and `dfn`, indices from `codes`, with weights `w`
+        (negative to take rows away) and points per 100 possessions `rate`.
+        CHUNK rows at a time, so the weighted copies stay small
+        """
+        k = len(self.players)
+        for i in range(0, len(w), CHUNK):
+            s = slice(i, i + CHUNK)
+            C = covariates[s]
+            P = players_design(off[s], dfn[s], k)
+            WC = C * w[s, None]
+            self.cc += C.T @ WC
+            self.pc += P.T @ WC
+            self.pp = self.pp + (P.T @ P.multiply(w[s, None]).tocsr())
+            wy = w[s] * rate[s]
+            self.bc += C.T @ wy
+            self.bp += P.T @ wy
+
+    def scale(self, factor: float) -> None:
+        """Every row's weight × `factor`"""
+        self.cc *= factor
+        self.pc *= factor
+        self.pp = self.pp * factor
+        self.bc *= factor
+        self.bp *= factor
+
+    def solve(
+        self,
+        ridge: float,
+        covariate_penalty: np.ndarray,
+        prior_offense: np.ndarray,
+        prior_defense: np.ndarray,
+        start: Fit | None = None,
+    ) -> Fit:
+        """
+        `fit`'s solve, for the players in the order of `players`, without
+        the points in rows without possessions
+        """
+        c = self.c
+        k = len(self.players)
+        prior = np.empty(2 * k)
+        prior[0::2] = prior_offense
+        prior[1::2] = prior_defense
+        b = np.r_[self.bc - self.pc.T @ prior, self.bp - self.pp @ prior]
+        penalty = np.r_[
+            np.asarray(covariate_penalty, dtype=float), np.full(2 * k, ridge)
+        ]
+        # a tiny penalty everywhere, so a column of zeros gets a coefficient of 0
+        A = sp.bmat(
+            [
+                [sp.csr_matrix(self.cc), sp.csr_matrix(self.pc.T)],
+                [sp.csr_matrix(self.pc), self.pp],
+            ]
+        ).tocsr() + sp.diags(penalty + 1e-9)
+        precondition = sp.diags(1 / A.diagonal())
+        x0 = None
+        if start is not None and len(start.coef) == c:
+            # a player new to this fit starts at their prior
+            x0 = np.r_[start.coef, np.zeros(2 * k)]
+            for p, i in self.players.items():
+                j = start.players.get(p)
+                if j is not None:
+                    x0[c + 2 * i] = start.offense[j] - prior_offense[i]
+                    x0[c + 2 * i + 1] = start.defense[j] - prior_defense[i]
+        x, info = cg(A, b, x0=x0, rtol=TOLERANCE, M=precondition, maxiter=10_000)
+        if info != 0:
+            raise RuntimeError(f"conjugate gradients didn't converge ({info})")
+        return Fit(
+            players=dict(self.players),
+            offense=prior_offense + x[c::2],
+            defense=prior_defense + x[c + 1 :: 2],
+            coef=x[:c].copy(),
+        )
+
+
+def weights(
+    poss: np.ndarray, pts: np.ndarray, weight: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Rows' weights in the fit, possessions × `weight` (0 without
+    possessions), and their points per 100 possessions
+    """
+    has = poss > 0
+    w = np.where(has, poss * weight, 0.0)
+    rate = np.divide(100 * pts, poss, out=np.zeros(len(w)), where=has)
+    return w, rate
+
+
+def loose_points(
+    covariates: np.ndarray, poss: np.ndarray, pts: np.ndarray, weight: np.ndarray
+) -> np.ndarray:
+    """
+    What the points in rows without possessions add to each covariate's
+    coefficient: to every column that is all ones, as a rate on the
+    possessions that are fit
+    """
+    out = np.zeros(covariates.shape[1])
+    loose = np.flatnonzero(poss == 0)
+    if len(loose) and len(loose) < len(poss):
+        intercept = (covariates.min(axis=0) == 1) & (covariates.max(axis=0) == 1)
+        # rows without possessions add nothing to the dot product
+        out[intercept] = 100 * np.dot(weight[loose], pts[loose]) / np.dot(poss, weight)
+    return out
 
 
 def fit(
@@ -194,40 +325,11 @@ def fit(
     prior_offense = np.zeros(k) if prior_offense is None else prior_offense
     prior_defense = np.zeros(k) if prior_defense is None else prior_defense
     # rows without possessions get no weight, rather than being copied out
-    has = rows.poss > 0
-    w = np.where(has, rows.poss * rows.weight, 0.0)
-    prior = prior_offense[rows.off].sum(axis=1) - prior_defense[rows.dfn].sum(axis=1)
-    rate = np.divide(100 * rows.pts, rows.poss, out=np.zeros(len(w)), where=has)
-    y = np.where(has, rate - prior, 0.0)
-
-    c = rows.covariates.shape[1]
-    penalty = np.r_[np.asarray(covariate_penalty, dtype=float), np.full(2 * k, ridge)]
-    # a tiny penalty everywhere, so a column of zeros gets a coefficient of 0
-    A, b = normal_equations(rows, w, y)
-    A = A + sp.diags(penalty + 1e-9)
-    precondition = sp.diags(1 / A.diagonal())
-    x0 = None
-    if start is not None and len(start.coef) == c:
-        # a player new to this fit starts at their prior
-        offense, defense = np.zeros(k), np.zeros(k)
-        for i, p in enumerate(rows.players):
-            j = start.players.get(p)
-            if j is not None:
-                offense[i] = start.offense[j] - prior_offense[i]
-                defense[i] = start.defense[j] - prior_defense[i]
-        x0 = np.r_[start.coef, offense, defense]
-    x, info = cg(A, b, x0=x0, rtol=TOLERANCE, M=precondition, maxiter=10_000)
-    if info != 0:
-        raise RuntimeError(f"conjugate gradients didn't converge ({info})")
-
-    coef = x[:c].copy()
-    loose = rows.weight * (rows.poss == 0)
-    if loose.any():
-        intercept = np.all(rows.covariates == 1, axis=0)
-        coef[intercept] += 100 * np.sum(loose * rows.pts) / np.sum(w)
-    return Fit(
-        players={p: i for i, p in enumerate(rows.players)},
-        offense=prior_offense + x[c : c + k],
-        defense=prior_defense + x[c + k :],
-        coef=coef,
-    )
+    w, rate = weights(rows.poss, rows.pts, rows.weight)
+    normal = Normal(rows.covariates.shape[1])
+    # in order, so the players' indices are `rows`'
+    normal.codes(rows.players)
+    normal.add(rows.off, rows.dfn, rows.covariates, w, rate)
+    out = normal.solve(ridge, covariate_penalty, prior_offense, prior_defense, start)
+    out.coef += loose_points(rows.covariates, rows.poss, rows.pts, rows.weight)
+    return out
