@@ -170,8 +170,9 @@ jobs:
     needs: publish
     if: needs.publish.outputs.built == 'true'
     runs-on: ubuntu-latest
-    # every season from 1999 is about 80-90 minutes with --jobs 2; margin
-    # for the runner's speed and the seasons to come
+    # the backfill starts no season after --budget minutes and leaves the
+    # rest to the next run, which fits the seasons not yet built by this
+    # model version: the timeout leaves an hour for the seasons it started
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v7
@@ -186,35 +187,39 @@ jobs:
       # rebuilds every season's segments only if a season needs fitting
       - name: Backfill
         id: backfill
+        # the seasons that finished are written, and uploaded, even if one fails
         run: |
-          set -o pipefail
-          uv run python -m yarapm.publish backfill --jobs 2 ${{ inputs.force && '--force' || '' }} | tee backfill.log
+          set +e -o pipefail
+          uv run python -m yarapm.publish backfill --jobs 2 --budget 120 ${{ inputs.force && '--force' || '' }} | tee backfill.log
+          status=$?
           if grep -q '^wrote ' backfill.log; then
             echo "wrote=true" >> "$GITHUB_OUTPUT"
           fi
+          exit $status
 
       - name: Upload
-        if: steps.backfill.outputs.wrote == 'true'
+        id: upload
+        if: ${{ !cancelled() && steps.backfill.outputs.wrote == 'true' }}
         run: *upload
         env: *spaces
 
       - name: Purge the CDN
-        if: steps.backfill.outputs.wrote == 'true'
+        if: ${{ !cancelled() && steps.upload.outcome == 'success' }}
         run: *purge
         env: *cdn
 
       - name: Build and upload the catalog
-        if: steps.backfill.outputs.wrote == 'true'
+        if: ${{ !cancelled() && steps.upload.outcome == 'success' }}
         run: *catalog
         env: *spaces
 
       - name: Purge the CDN again, for the catalog
-        if: steps.backfill.outputs.wrote == 'true'
+        if: ${{ !cancelled() && steps.upload.outcome == 'success' }}
         run: *purge
         env: *cdn
 
       - name: Verify
-        if: steps.backfill.outputs.wrote == 'true'
+        if: ${{ !cancelled() && steps.upload.outcome == 'success' }}
         run: *verify
 
       - name: Notify on failure

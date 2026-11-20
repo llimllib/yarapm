@@ -94,12 +94,13 @@ import argparse
 import hashlib
 import json
 import os
+import resource
 import subprocess
 import sys
 import time
 import urllib.request
-from collections.abc import Mapping
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from collections.abc import Callable, Mapping
+from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
 from datetime import UTC, date, datetime, timedelta
 from multiprocessing import get_context
 from pathlib import Path
@@ -127,6 +128,8 @@ DATASETS = (*DAILY, "predictions", "minutes")
 LOGS = ("prediction_log", "minutes_log")
 # a build logs the predictions for the games in this many days
 LOG_DAYS = 7
+# a backfill prints its progress through a season every this many days
+PROGRESS_DAYS = 25
 # DuckDB 1.1.1, in Observable Framework's DuckDB-wasm, reads up to v1.0.0
 STORAGE_VERSION = "v1.0.0"
 # rows per parquet row group. ratings_daily is sorted by player and
@@ -330,6 +333,7 @@ def daily_tables(
     version: str,
     rated: dict[date, Daily] | None = None,
     force: bool = False,
+    progress: bool = False,
 ) -> int:
     """
     Temp tables `ratings_daily`, `team_ratings_daily` and
@@ -337,7 +341,8 @@ def daily_tables(
     `days` fit with the live model. If the season's files were built by
     model version `version` (and not `force`), their days are kept and
     only the missing ones fit; if not, every day is fit and the files'
-    rows dropped. Returns the number of days fit
+    rows dropped. Returns the number of days fit. With `progress`, prints
+    how far it's got every PROGRESS_DAYS days
     """
     rated = dict(rated or {})
     paths = {d: dataset_path(root, d, season) for d in DAILY}
@@ -347,10 +352,17 @@ def daily_tables(
     }
     model = live_model()
     todo = sorted(set(days) - (have or set()) - set(rated))
-    for d in todo:
+    start = time.monotonic()
+    for i, d in enumerate(todo, 1):
         history = History(con, d, season)
         model.fit(history)
         rated[d] = day_rows(model, history)
+        if progress and (i % PROGRESS_DAYS == 0 or i == len(todo)):
+            print(
+                f"{season}: {i}/{len(todo)} days in {time.monotonic() - start:.0f}s, "
+                f"peak memory {peak_memory():.1f}GB",
+                flush=True,
+            )
     ratings_table(
         con,
         {d: rows.players for d, rows in rated.items()},
@@ -534,6 +546,80 @@ def stale(
     return out
 
 
+# BLAS's thread counts, set for the backfill's worker processes
+BLAS_THREADS = (
+    "OPENBLAS_NUM_THREADS",
+    "OMP_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "VECLIB_MAXIMUM_THREADS",
+)
+
+
+class Backfilled(NamedTuple):
+    done: list[int]
+    failed: dict[int, BaseException]
+    # not started: the budget ran out
+    left: list[int]
+
+
+def run_seasons(
+    fit: Callable[..., tuple[int, float]],
+    seasons: list[int],
+    args: tuple,
+    jobs: int = 1,
+    budget: float | None = None,
+) -> Backfilled:
+    """
+    `fit(season, *args)` for each season in order, `jobs` at a time, each in
+    a process of their own with `jobs` above 1 (spawned, not forked: a fork
+    would share an open connection), or here with 1. A process for each
+    season (`max_tasks_per_child=1`) hung after the first season, on
+    Python 3.14. No season is started once `budget`
+    seconds have passed. A season that fails doesn't stop the others
+    """
+    start = time.monotonic()
+    out = Backfilled([], {}, [])
+    todo = list(seasons)
+
+    def report(season: int, result: tuple[int, float]) -> None:
+        out.done.append(season)
+        print(f"{season}: fit {result[0]} days in {result[1]:.0f}s", flush=True)
+
+    def over() -> bool:
+        return budget is not None and time.monotonic() - start >= budget
+
+    if jobs <= 1:
+        while todo and not over():
+            season = todo.pop(0)
+            try:
+                report(season, fit(season, *args))
+            except Exception as e:  # noqa: BLE001 (reported, and raised by `backfill`)
+                out.failed[season] = e
+                print(f"{season}: failed: {e!r}", flush=True)
+    else:
+        with ProcessPoolExecutor(
+            min(jobs, len(todo)) or 1,
+            mp_context=get_context("spawn"),
+        ) as pool:
+            running: dict[Future, int] = {}
+            while todo or running:
+                while todo and len(running) < jobs and not over():
+                    season = todo.pop(0)
+                    running[pool.submit(fit, season, *args)] = season
+                if not running:
+                    break
+                finished, _ = wait(running, return_when=FIRST_COMPLETED)
+                for future in finished:
+                    season = running.pop(future)
+                    try:
+                        report(season, future.result())
+                    except Exception as e:  # noqa: BLE001 (reported, and raised by `backfill`)
+                        out.failed[season] = e
+                        print(f"{season}: failed: {e!r}", flush=True)
+    out.left.extend(todo)
+    return out
+
+
 def backfill(
     con: duckdb.DuckDBPyConnection,
     seasons: list[int],
@@ -541,70 +627,100 @@ def backfill(
     sha: str = "unknown",
     force: bool = False,
     jobs: int = 1,
+    budget: float | None = None,
 ) -> list[str]:
     """
     Fit and write the daily datasets for finished `seasons` into `root`:
     their missing days, or every day if they weren't built by this model
-    version or `force`. Needs the tables `yarapm.harness.load` makes.
-    Returns the datasets written.
+    version or `force`. Returns the datasets written. With `jobs` 1, the
+    seasons are fit on `con`, which needs the tables `yarapm.harness.load`
+    makes.
 
     With `jobs` above 1, that many seasons are fit at once, each in a
-    process of its own with its own connection: no season's fit uses
-    another's, only the source data, so they can be fit in any order
+    process of its own with its own connection, the machine's cores split
+    between them: no season's fit uses another's, only the source data, so
+    they can be fit in any order. They're fit newest first.
+
+    No season is started after `budget` seconds: the rest are left for the
+    next backfill, which fits the seasons not yet built by this model
+    version (`stale`). The seasons that finished are written even if
+    another fails, and then it raises
     """
+    if not seasons:
+        return []
+    seasons = sorted(seasons, reverse=True)
     model = live_model()
     settings = json.dumps(model.settings, sort_keys=True)
     version = model_version(play_by_play_from(con))
-    if seasons:
-        check_mirror(root, seasons[-1])
-    args = (root, sha, settings, version, force)
-    if jobs > 1 and len(seasons) > 1:
-        # spawned, not forked: a fork would share the open connection
-        with ProcessPoolExecutor(
-            min(jobs, len(seasons)), mp_context=get_context("spawn")
-        ) as pool:
-            futures = {
-                pool.submit(backfill_season, None, season, *args): season
-                for season in seasons
-            }
-            for future in as_completed(futures):
-                fit, seconds = future.result()
-                print(
-                    f"{futures[future]}: fit {fit} days in {seconds:.0f}s", flush=True
-                )
+    check_mirror(root, seasons[0])
+    if jobs > 1:
+        threads = max(1, (os.cpu_count() or 1) // jobs)
+        for name in BLAS_THREADS:
+            os.environ.setdefault(name, str(threads))
+        result = run_seasons(
+            backfill_season,
+            seasons,
+            (None, root, sha, settings, version, force, threads),
+            jobs,
+            budget,
+        )
     else:
-        for season in seasons:
-            fit, seconds = backfill_season(con, season, *args)
-            print(f"{season}: fit {fit} days in {seconds:.0f}s", flush=True)
-    if not seasons:
-        return []
-    about = {
-        "commit": sha,
-        "model": model.name,
-        "settings": model.settings,
-        "model_version": version,
-    }
-    write_metadata(root, dict.fromkeys(DAILY, about), {})
-    return list(DAILY)
+        result = run_seasons(
+            backfill_season,
+            seasons,
+            (con, root, sha, settings, version, force),
+            1,
+            budget,
+        )
+    if result.left:
+        print(f"out of time: {sorted(result.left)} left for the next backfill")
+    written = []
+    if result.done:
+        about = {
+            "commit": sha,
+            "model": model.name,
+            "settings": model.settings,
+            "model_version": version,
+        }
+        write_metadata(root, dict.fromkeys(DAILY, about), {})
+        written = list(DAILY)
+    if result.failed:
+        for dataset in written:
+            print(f"wrote {dataset}")
+        raise RuntimeError(f"backfill failed for {sorted(result.failed)}") from next(
+            iter(result.failed.values())
+        )
+    return written
+
+
+def peak_memory() -> float:
+    """This process's peak resident memory, in GB"""
+    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    # bytes on macOS, kilobytes on Linux
+    return rss / 1e9 if sys.platform == "darwin" else rss / 1e6
 
 
 def backfill_season(
-    con: duckdb.DuckDBPyConnection | None,
     season: int,
+    con: duckdb.DuckDBPyConnection | None,
     root: Path,
     sha: str,
     settings: str,
     version: str,
     force: bool,
+    threads: int | None = None,
 ) -> tuple[int, float]:
     """
     Fit, check and write a season's daily datasets for `backfill`, on `con`,
-    or with none, on a new connection with `yarapm.harness.load`'s tables.
-    Returns the number of days fit and the seconds it took
+    or with none, on a new connection with `yarapm.harness.load`'s tables
+    and `threads` threads. Returns the number of days fit and the seconds
+    it took
     """
     start = time.monotonic()
     if con is None:
         con = connect()
+        if threads:
+            con.execute(f"SET threads = {int(threads)}")
         load(con)
     fit = daily_tables(
         con,
@@ -615,6 +731,7 @@ def backfill_season(
         settings,
         version,
         force=force,
+        progress=True,
     )
     validate(con, None)
     for dataset in DAILY:
@@ -1334,6 +1451,11 @@ def main(argv: list[str] | None = None) -> None:
         help="seasons to fit at once, each in its own process",
     )
     f.add_argument(
+        "--budget",
+        type=float,
+        help="start no season after this many minutes, leaving the rest for the next backfill",
+    )
+    f.add_argument(
         "--no-segments",
         action="store_true",
         help="use the segments already in out/ instead of rebuilding them",
@@ -1372,8 +1494,13 @@ def main(argv: list[str] | None = None) -> None:
             return
         if not args.no_segments:
             segments.main([])
-        load(con)
-        for dataset in backfill(con, todo, args.root, commit(), args.force, args.jobs):
+        # with more than one job, each season's process loads its own
+        if args.jobs <= 1:
+            load(con)
+        budget = None if args.budget is None else args.budget * 60
+        for dataset in backfill(
+            con, todo, args.root, commit(), args.force, args.jobs, budget
+        ):
             print(f"wrote {dataset}")
         return
     games = scheduled(con, day, 366)

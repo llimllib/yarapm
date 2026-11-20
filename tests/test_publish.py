@@ -1,4 +1,6 @@
 import json
+import os
+import time
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
@@ -18,6 +20,7 @@ from yarapm.publish import (
     metadata_path,
     model_version,
     ratings_table,
+    run_seasons,
     season_days,
     stale,
     team_tables,
@@ -27,6 +30,14 @@ from yarapm.publish import (
 )
 
 NONE = Path("/nonexistent/data.parquet")
+
+
+def fit_season(season, seconds, fail):
+    """A stand-in for `backfill_season`, at module level so a spawned process can import it"""
+    time.sleep(seconds)
+    if season == fail:
+        raise ValueError(f"bad {season}")
+    return season - 2000, float(os.getpid())
 
 
 def rating(player, o=1.0, d=-1.0):
@@ -451,3 +462,20 @@ def test_log_tables_log_each_models_minutes(tmp_path):
     assert con.sql(
         "SELECT model, count(*), sum(min) FROM minutes_log GROUP BY ALL ORDER BY ALL"
     ).fetchall() == [("rapm", 8, 240), ("rapm_pattern", 8, 192)]
+
+
+@pytest.mark.parametrize("jobs", [1, 2])
+def test_run_seasons_keeps_going_after_a_failure(jobs):
+    out = run_seasons(fit_season, [2026, 2025, 2024], (0.0, 2025), jobs)
+    assert sorted(out.done) == [2024, 2026]
+    assert list(out.failed) == [2025]
+    assert isinstance(out.failed[2025], ValueError)
+    assert out.left == []
+
+
+@pytest.mark.parametrize("jobs", [1, 2])
+def test_run_seasons_starts_none_after_the_budget(jobs):
+    # each takes 0.3s against a budget of 0.1s: the first `jobs` start
+    out = run_seasons(fit_season, [2026, 2025, 2024, 2023], (0.3, None), jobs, 0.1)
+    assert sorted(out.done) == sorted([2026, 2025][:jobs])
+    assert out.left == [2025, 2024, 2023][jobs - 1 :]
