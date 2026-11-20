@@ -127,6 +127,20 @@ def test_rosters_follow_trades():
     assert teams["A"]["a1"] == (0, 5)
 
 
+def test_rosters_leave_out_teams_gone_from_the_league():
+    con = duckdb.connect()
+    # Charlotte played in 2002 and not since; New Orleans from 2003
+    tables(
+        con, [("CHH", "B", {"CHH": team(A_STARTERS, ["a6", "a7"]), "B": B})] * 3, 2002
+    )
+    tables(con, [("B", "C", {"B": B})] * 3, 2003)
+    tables(con, [("B", "C", {"B": B})] * 3, 2004)
+    assert "CHH" in rosters(History(con, date(2003, 1, 1), 2003))
+    assert "CHH" not in rosters(History(con, date(2004, 1, 1), 2004))
+    # the id comes back as an expansion team in 2005, with no one on it
+    assert "CHH" not in rosters(History(con, date(2004, 11, 1), 2005))
+
+
 def test_availability_ignores_this_seasons_games():
     con = duckdb.connect()
     a = team(A_STARTERS, ["a6", "a7", "a8"])

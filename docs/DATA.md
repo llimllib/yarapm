@@ -134,7 +134,10 @@ predictions weigh them; `team_players_daily` has the lineups.
   predictions used: for a day rebuilt after the fact, the last of each
   before the day's first tip-off.
 
-Each is relative to the average of the 30 teams that day. The two lineups
+Each is relative to the average of the league's teams that day: 29 through
+2003-04, 30 since. A team with no players yet (New Orleans before its first
+game in 2002-03, Charlotte's in 2004-05) is rated average and has no rows
+in `team_players_daily`, and isn't in the average. The two lineups
 give out minutes differently (in order, and scaled), so even a healthy
 team's numbers differ a little; compare a team's to the other teams' in the
 same column rather than its full strength to its today.

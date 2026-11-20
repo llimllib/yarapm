@@ -118,7 +118,8 @@ from yarapm.tempo import PLAYOFF_TYPES, Tempo
 TARGET_RIDGE = 3000
 
 
-# the number of teams, for the average games played (`PlayerRatings.games`)
+# the number of teams, for the average games played (`PlayerRatings.games`),
+# when the season's aren't known (`History.teams`)
 TEAMS = 30
 
 # the aging curve's inputs: age clamped to AGE_RANGE, centered at AGE_CENTER
@@ -450,7 +451,8 @@ class PlayerRatings:
             .aggregate("count(*)")
             .fetchall()[0]
         )
-        return 2 * n / TEAMS
+        teams = history.teams()
+        return 2 * n / (len(teams) if teams else TEAMS)
 
     def target(self, history: History) -> tuple[rapm.Fit, list[int]]:
         """

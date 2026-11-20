@@ -20,6 +20,11 @@ starters. A player hurt since before the season isn't counted until they
 play. Before a team's first game of the season, its full-strength lineup
 is its model roster.
 
+The teams are the season's (`History.teams`), 29 through 2004 and 30
+since, not whichever teams have rosters: a team that's moved under a new
+id has none before its first game, and an expansion team none until its
+first. Until then both have empty lineups, and are rated average
+
 Full strength fills the minutes in order rather than scaling everyone's
 down: on a team with injuries, the players filling in have played big
 minutes, and scaling the 15 or so who've played to 240 would cut a star's
@@ -93,8 +98,9 @@ def lineups(projection: ProjectedMinutes, history: History) -> dict[str, Lineup]
     `history`
     """
     played = played_for(history)
+    teams = history.teams() or set(projection.rosters) | set(played)
     out = {}
-    for team in sorted(set(projection.rosters) | set(played)):
+    for team in sorted(teams):
         chances = projection.playing_chances(team)
         full = played.get(team) or set(chances)
         out[team] = Lineup(
@@ -111,26 +117,24 @@ def team_ratings(
 ) -> tuple[dict[str, TeamRating], TeamRating]:
     """
     Each team's ratings relative to the average team, from `strength`
-    (minutes -> offense, defense), and the average team's raw ones
+    (minutes -> offense, defense), and the average team's raw ones. The
+    average is over the teams with a lineup; one with none, a new team
+    before its first game, is rated average
     """
-    raw = {
-        team: TeamRating(*strength(lineup.full), *strength(lineup.today))
-        for team, lineup in lineups.items()
-    }
-    n = len(raw)
-    mean = TeamRating(
-        sum(r.full_off for r in raw.values()) / n,
-        sum(r.full_def for r in raw.values()) / n,
-        sum(r.off for r in raw.values()) / n,
-        sum(r.dfn for r in raw.values()) / n,
-    )
-    centered = {
-        team: TeamRating(
-            r.full_off - mean.full_off,
-            r.full_def - mean.full_def,
-            r.off - mean.off,
-            r.dfn - mean.dfn,
+
+    def relative(
+        lineup: Callable[[Lineup], dict[str, float]],
+    ) -> tuple[dict[str, tuple[float, float]], tuple[float, float]]:
+        raw = {t: strength(lineup(x)) for t, x in lineups.items() if lineup(x)}
+        n = max(len(raw), 1)
+        mean = (
+            sum(o for o, _ in raw.values()) / n,
+            sum(d for _, d in raw.values()) / n,
         )
-        for team, r in raw.items()
-    }
-    return centered, mean
+        out = {t: (o - mean[0], d - mean[1]) for t, (o, d) in raw.items()}
+        return {t: out.get(t, (0.0, 0.0)) for t in lineups}, mean
+
+    full, full_mean = relative(lambda x: x.full)
+    today, today_mean = relative(lambda x: x.today)
+    rated = {t: TeamRating(*full[t], *today[t]) for t in lineups}
+    return rated, TeamRating(*full_mean, *today_mean)

@@ -434,11 +434,19 @@ def rosters(history: History) -> dict[str, dict[str, tuple[int, int]]]:
     """
     Each team's roster as of the cutoff: players who played one of its last
     ROSTER_GAMES games and not for another team since, with (games since
-    they last played for it, how many of those games they played)
+    they last played for it, how many of those games they played). Only
+    teams that have played this season or last: a team gone from the league
+    keeps the players who never played again, and its id can come back as
+    another team (Charlotte's, from the Hornets of 2002 to the Bobcats of
+    2005)
     """
+    recent = "true" if history.season is None else f"season >= {history.season - 1}"
     rows = history.con.execute(f"""
         WITH tg AS ({team_games(history)}),
-        last AS (SELECT team_id, max(n) AS n FROM tg GROUP BY team_id),
+        last AS (
+            SELECT team_id, max(n) AS n FROM tg GROUP BY team_id
+            HAVING bool_or({recent})
+        ),
         played AS (
             SELECT p.player_id, p.game_date, tg.team_id, tg.n
             FROM ({history.player_games.sql_query()}) p

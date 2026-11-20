@@ -398,6 +398,19 @@ class History:
             {(g, t): d for g, t, d, *_ in rows},
         )
 
+    def teams(self) -> set[str] | None:
+        """
+        The teams in the season's games, played or scheduled (`load_teams`).
+        Not a leak: the league's teams are known before its first game.
+        None with no season, or if `load` hasn't made the table
+        """
+        if self.season is None or not table_exists(self.con, "teams"):
+            return None
+        rows = self.con.execute(
+            "SELECT team_id FROM teams WHERE season = ?", [self.season]
+        ).fetchall()
+        return {t for (t,) in rows} or None
+
     def rest(self, game_ids: list[str]) -> dict[tuple[str, str], int | None]:
         """
         Each team's days off before each of `game_ids` (`load_rest`),
@@ -786,7 +799,7 @@ def load(con: duckdb.DuckDBPyConnection, out: Path = OUT) -> None:
     The tables `History` reads: `results`, `player_games`, `bio`,
     `openrapm`, `injuries` (ESPN's injury lists), `injury_report` (the
     NBA's), `schedule` (`yarapm.games.schedule_query`), `rest`
-    (`load_rest`), and `all_segments` if built; and
+    (`load_rest`), `teams` (`load_teams`), and `all_segments` if built; and
     `lines`, for scoring
     """
     load_results(con)
@@ -837,8 +850,35 @@ def load(con: duckdb.DuckDBPyConnection, out: Path = OUT) -> None:
     """)
     con.execute(f"CREATE OR REPLACE TEMP TABLE schedule AS {schedule_query()}")
     load_rest(con)
+    load_teams(con)
     if (out / "segments").is_dir():
         read(con, "segments", out).create_view("all_segments", replace=True)
+
+
+def load_teams(con: duckdb.DuckDBPyConnection) -> None:
+    """
+    Temp table `teams`: (season, team_id), the teams in each season's games
+    (nba.games, the types in `yarapm.games`) and the temp table `schedule`.
+    29 through 2004, 30 since: a team's id can come and go, as Charlotte's
+    did when the Hornets moved to New Orleans (a new id, from 2003) and
+    came back as the Bobcats (2005)
+    """
+    types = ", ".join(f"'{t}'" for t in GAME_TYPES)
+    con.execute(f"""
+        CREATE OR REPLACE TEMP TABLE teams AS
+        WITH g AS (
+            SELECT season, home_team_id, away_team_id
+            FROM nba.games WHERE game_type IN ({types})
+            UNION ALL
+            SELECT season, team_id, opp_team_id FROM schedule
+        )
+        SELECT DISTINCT season, team_id FROM (
+            SELECT season, home_team_id AS team_id FROM g
+            UNION ALL
+            SELECT season, away_team_id FROM g
+        )
+        WHERE team_id IS NOT NULL
+    """)
 
 
 def load_rest(con: duckdb.DuckDBPyConnection) -> None:

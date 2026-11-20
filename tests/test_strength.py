@@ -6,7 +6,14 @@ import pytest
 from tests.test_minutes import B, tables, team
 from yarapm.harness import History
 from yarapm.minutes import ProjectedMinutes
-from yarapm.strength import Lineup, fill, lineups, played_for, team_ratings
+from yarapm.strength import (
+    Lineup,
+    TeamRating,
+    fill,
+    lineups,
+    played_for,
+    team_ratings,
+)
 
 A_STARTERS = ["a1", "a2", "a3", "a4", "a5"]
 
@@ -92,6 +99,21 @@ def test_before_a_teams_first_game_its_roster_is_full_strength():
     assert set(lineups(projection, history)["A"].full) == set(a)
 
 
+def test_the_teams_are_the_seasons():
+    con = duckdb.connect()
+    a = team(A_STARTERS, ["a6", "a7", "a8"])
+    # A leaves the league after 2023; C joins in 2024 and hasn't played yet
+    tables(con, [("A", "B", {"A": a, "B": B})] * 12, season=2023)
+    con.execute("""CREATE TEMP TABLE teams AS
+        FROM (VALUES (2023, 'A'), (2023, 'B'), (2024, 'B'), (2024, 'C'))
+        t(season, team_id)""")
+    projection, history = fit(con, date(2023, 11, 1))
+    teams = lineups(projection, history)
+    assert set(teams) == {"B", "C"}
+    assert teams["C"].full == teams["C"].today == {}
+    assert history.teams() == {"B", "C"}
+
+
 def test_team_ratings_are_centered():
     # each player is worth their minutes / 48 on offense, and 0 on defense
     def strength(minutes):
@@ -113,4 +135,26 @@ def test_team_ratings_are_centered():
     # B is as good as A at full strength, and is missing its star today
     assert rated["B"].full_off == rated["A"].full_off
     assert rated["B"].off == pytest.approx(-1 / 3)
+    assert sum(r.off for r in rated.values()) == pytest.approx(0)
+
+
+def test_a_team_with_no_players_yet_is_average():
+    def strength(minutes):
+        return sum(m for p, m in minutes.items() if p == "star") / 48, 1.0
+
+    star = {"star": 48.0, "other": 192.0}
+    rest = {"other": 240.0}
+    rated, mean = team_ratings(
+        {
+            "A": Lineup(star, star, {}),
+            "C": Lineup(rest, rest, {}),
+            # an expansion team before its first game
+            "N": Lineup({}, {}, {}),
+        },
+        strength,
+    )
+    # the average is A's and C's
+    assert (mean.full_off, mean.full_def, mean.off) == pytest.approx((0.5, 1, 0.5))
+    assert rated["N"] == TeamRating(0.0, 0.0, 0.0, 0.0)
+    assert rated["A"].full_off == pytest.approx(0.5)
     assert sum(r.off for r in rated.values()) == pytest.approx(0)

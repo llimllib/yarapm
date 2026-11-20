@@ -374,7 +374,12 @@ def test_validate_teams():
     con = duckdb.connect()
     tables(con)
     for teams, shift, message in [
-        ({date(2026, 11, 1): 29}, 0.0, "30 teams a day"),
+        ({date(2026, 11, 1): 28}, 0.0, "the league's teams each day"),
+        (
+            {date(2026, 11, 1): 29, date(2026, 11, 2): 30},
+            0.0,
+            "the league's teams each day",
+        ),
         ({date(2026, 11, 1): 30}, 1.0, "add up and are centered"),
     ]:
         team_tables(
@@ -387,6 +392,16 @@ def test_validate_teams():
         )
         with pytest.raises(ValueError, match=message):
             validate(con, 1)
+    # 29 teams through 2004
+    team_tables(
+        con,
+        team_days({date(2026, 11, 1): 29}),
+        "c",
+        "{}",
+        "v",
+        dict.fromkeys(DAILY),
+    )
+    validate(con, 1)
 
 
 def test_validate_players_centered():

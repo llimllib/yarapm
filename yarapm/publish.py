@@ -1040,8 +1040,10 @@ def validate(con: duckdb.DuckDBPyConnection, games: int | None) -> None:
             SELECT count(*) = count(DISTINCT (as_of_date, player_id))
                 AND count(*) > 0
             FROM ratings_daily""",
-        "30 teams a day": """
-            SELECT coalesce(bool_and(teams = 30 AND n = 30), false) FROM (
+        # the season's teams (`History.teams`): 29 through 2004, 30 since
+        "the league's teams each day": """
+            SELECT coalesce(bool_and(teams = n) AND min(n) = max(n)
+                AND max(n) BETWEEN 29 AND 30, false) FROM (
                 SELECT count(DISTINCT team_id) AS teams, count(*) AS n
                 FROM team_ratings_daily GROUP BY as_of_date)""",
         "team ratings add up and are centered": """
@@ -1049,7 +1051,9 @@ def validate(con: duckdb.DuckDBPyConnection, games: int | None) -> None:
                 abs(full_off + full_def - full_net) < 0.02
                 AND abs(off + def - net) < 0.02
                 AND abs(full_net) < 25 AND abs(net) < 25
-                AND league_average BETWEEN 90 AND 130), true)
+                -- the level swings in a season's first days: 89.5 the
+                -- day after 2002-03's opening night, from three games
+                AND league_average BETWEEN 80 AND 130), true)
                 AND (SELECT coalesce(bool_and(abs(f) < 0.05 AND abs(t) < 0.05), true)
                     FROM (SELECT avg(full_net) AS f, avg(net) AS t
                         FROM team_ratings_daily GROUP BY as_of_date))
