@@ -28,28 +28,29 @@ whole season at once and describe it in hindsight. A daily rating in
 November rests on a few weeks of this season and a discounted memory of
 the last ones. Season-end ratings know how the season turned out.
 
-The history starts in 2012. The box-score prior learns from earlier
+The history starts in 1999. The box-score prior learns from earlier
 seasons of plus-minus (@ch:prior), so a season can only be rated once
 there are two seasons of play-by-play before it, and nba_data's
-play-by-play currently starts in 2010. The first seasons rest on less
-than the later ones: a prior learned from two seasons rather than ten,
-and a fit with fewer years of games behind it.
+play-by-play starts in 1997, as far back as the NBA's own goes. The first
+seasons rest on less than the later ones: a prior learned from two
+seasons rather than ten, and a fit with fewer years of games behind it.
 
 ## A career
 
-![Paul George's ratings as of each day of each season since 2012: total,
+![Paul George's ratings as of each day of each season since 2011: total,
 offensive and defensive. Labels give the team George was on for most of
 each season. Gaps are offseasons, when there are no
 games.](figures/george.svg){#fig:george}
 
-@fig:george follows Paul George through sixteen seasons and five teams.
-In Indiana, George's rating ended each season between $+3.5$ and $+5.1$,
-with defense rated higher than offense in all but the last. After the
-trade to Oklahoma City it ended 2018 at $+3.1$ and 2019 at $+5.9$. Through
-five seasons with the Clippers it stayed between $+4.2$ and $+5.9$, most
+@fig:george follows Paul George through seventeen seasons and five teams.
+George's rookie season, 2011, ended at $+0.6$. After it, in Indiana,
+George's rating ended each season between $+3.9$ and $+5.3$, with
+defense rated higher than offense in all but the last. After the trade
+to Oklahoma City it ended 2018 at $+3.1$ and 2019 at $+5.9$. Through
+five seasons with the Clippers it stayed between $+4.3$ and $+5.9$, most
 of it on offense. In Philadelphia, with 41 games played in 2025 and
-49 in 2026, it fell to $+2.3$ and then $+1.8$, and this season, in
-Boston, it started near $+2.0$ and has risen to $+2.5$.
+49 in 2026, it fell to $+2.1$ and then $+1.7$, and this season, in
+Boston, it started near $+1.7$ and has risen to $+2.3$.
 
 The figure shows the model's habits as well as the player's. Within a
 season the rating moves in small steps, a game's worth of evidence at a
@@ -88,9 +89,9 @@ missed.](figures/warriors.svg){#fig:warriors}
 
 At full strength the Warriors averaged $+5.4$ points per 100 possessions
 over the season, a good team. With the lineup expected each day they
-averaged $+2.8$, and the gap follows Curry's absences: on March 20, in
+averaged $+2.9$, and the gap follows Curry's absences: on March 20, in
 the middle of Curry's longest stretch out, they were $+7.1$ at full strength
-and $+1.0$ as they would actually take the floor. A team rating fit to
+and $+1.5$ as they would actually take the floor. A team rating fit to
 results, @ch:question's baseline, sees one number somewhere in between
 and can't tell which team is playing tonight.
 
@@ -109,7 +110,7 @@ season has the same one.
 :::
 
 When the version changes, every season is refit from scratch, about
-2,900 days of fits. The first season of play-by-play is in the hash
+5,700 days of fits. The first season of play-by-play is in the hash
 because of @ch:prior: adding earlier seasons changes what the box
 formula learns, and so every rating after them, even though no code has
 changed. This happened while this book was being written. On November 5,
@@ -117,22 +118,26 @@ changed. This happened while this book was being written. On November 5,
 changed, and the publishing job refit thirteen seasons, starting the
 history in 2014 instead of 2018, without anyone doing anything. Days
 later, play-by-play for 2010 and 2011 arrived, and it started in 2012.
+Then nba_data went back to 1997, the first season of the NBA's
+play-by-play, and the history now starts in 1999.
 
 ::: code
-The datasets are built by [`yarapm/publish.py`](code:yarapm/publish.py#L373):
+The datasets are built by [`yarapm/publish.py`](code:yarapm/publish.py#L385):
 `build` writes the current season every time nba_data updates, refitting
-only the new days if the season's files were built by this version (at
-about 0.2 to 0.9 seconds a day), and
-[`backfill`](code:yarapm/publish.py#L537) refits finished seasons whose
-files are stale, which takes 45 to 75 minutes for all of them in GitHub
-Actions. The version is [`model_version`](code:yarapm/publish.py#L163).
+only the new days if the season's files were built by this version, and
+[`backfill`](code:yarapm/publish.py#L623) refits finished seasons whose
+files are stale. A day's fit updates the last one, dropping the rows
+that have aged out of the window and adding the new day's, rather than
+building it again, at about half a second a day; all 28 finished seasons
+take about 20 minutes in GitHub Actions. The version is
+[`model_version`](code:yarapm/publish.py#L166).
 The full-strength lineups are in
-[`yarapm/strength.py`](code:yarapm/strength.py#L90).
+[`yarapm/strength.py`](code:yarapm/strength.py#L95).
 
 Each season is one Parquet file, sorted by player and written in row
 groups of 20,480 rows. A reader filtering on one player can skip every
 row group whose statistics say the player isn't in it, so one player's
-career, over sixteen files, is about a megabyte over HTTP, little enough
+career, over seventeen files, is about a megabyte over HTTP, little enough
 to chart in a browser with DuckDB's WebAssembly build:
 
 ```sql

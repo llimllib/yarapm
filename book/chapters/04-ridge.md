@@ -172,7 +172,7 @@ Jokić, whom no one believed was average before the season started. The
 cure is not a smaller penalty, which brings the funnel back, but more
 data and a better prior: more seasons of games (@ch:time) and a starting
 guess from each player's statistics (@ch:prior). The published 2026
-rating for Jokić, with both, is $+9.8$.
+rating for Jokić, with both, is $+10.1$.
 
 ## The other unknowns {#sec:covariates}
 
@@ -185,16 +185,16 @@ with their own penalties:
   from season to season (@fig:league).
 - **Home court**: $+1$ in the rows of the home team's offense and $-1$
   in the away team's, $0$ at a neutral site. Unpenalized. In the April
-  2026 fits, it's 0.91 points per 100 possessions each way, so home court
-  is worth about $2 \times 0.91 = 1.8$ points per 100, or close to two
+  2026 fits, it's 0.92 points per 100 possessions each way, so home court
+  is worth about $2 \times 0.92 = 1.8$ points per 100, or close to two
   points a game.
 - **Playoffs**: $1$ in playoff and play-in rows. Unpenalized, and
-  $-3.81$ points per 100 in the same fits: playoff offense is less
+  $-3.71$ points per 100 in the same fits: playoff offense is less
   efficient, as the Finals clincher of @ch:question suggested.
 - **Back-to-backs**: two columns, $1$ in the rows where the offense is
   playing the second night of a back-to-back, and $1$ where the defense
-  is. Unpenalized. In the same fits they're $-0.60$ and $+1.16$: a tired
-  team scores 0.6 fewer points per 100 possessions and allows 1.2 more,
+  is. Unpenalized. In the same fits they're $-0.68$ and $+1.09$: a tired
+  team scores 0.7 fewer points per 100 possessions and allows 1.1 more,
   so it gives up about 1.8 points of margin. Each team's days off come
   from the schedule, so they're known before the game. Columns for two
   and three days off, against the usual one, came out near zero and
@@ -232,22 +232,25 @@ close to yesterday's. Starting the solver from yesterday's ratings, a
 iterations, and the next days' warm-started fits took 25 and 20.
 
 ::: code
-The solve is [`rapm.fit`](code:yarapm/rapm.py#L124). It forms $A$ as a
-sparse matrix ([line 165](code:yarapm/rapm.py#L165)), preconditions with
-its diagonal, and calls SciPy's `cg` with a relative tolerance of
-$10^{-8}$ and the previous fit as the starting point. The zero-possession
-points are added to the intercept at [line 183](code:yarapm/rapm.py#L183).
+The solve is [`rapm.fit`](code:yarapm/rapm.py#L304). It forms $A$ by
+blocks ([`Normal`](code:yarapm/rapm.py#L150)): the covariates' block is
+dense, and only the players' block is a sparse product. It
+preconditions with the diagonal, and calls SciPy's `cg` with a relative
+tolerance of $10^{-8}$ and the previous fit as the starting point. The
+zero-possession points are added to the intercept by
+[`loose_points`](code:yarapm/rapm.py#L287).
 
 Most of a day's fit is forming $A$, not solving with it. On February 28,
 2025, the fit had 566,721 rows and 2,692 unknowns, and $A$ was 17%
 nonzero. Forming it took 0.6 seconds; each multiplication by it took
-1.2 milliseconds, so 25 iterations cost 0.03 seconds. Two ways to cut the
-0.6 seconds are open questions for the project. One never forms $A$,
-computing $Av = X^\top (W (Xv))$ instead, at 11.6 milliseconds a product.
-The other notices that a day's decay (@ch:time) multiplies every old row's
+1.2 milliseconds, so 25 iterations cost 0.03 seconds. So yarapm no
+longer rebuilds it. A day's decay (@ch:time) multiplies every old row's
 weight by the same factor, so today's $A$ is yesterday's times a
-constant plus the new day's rows, and could be updated rather than
-rebuilt.
+constant, plus the new day's rows, less the rows that have aged out of
+the window. [`Normal.scale`](code:yarapm/rapm.py#L217) and
+[`Normal.add`](code:yarapm/rapm.py#L191), with negative weights to take
+rows away, update it, and refitting a season day by day became about
+five times faster.
 :::
 
 ## Exercises {.unnumbered}

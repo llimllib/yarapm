@@ -59,7 +59,7 @@ numbers per player.
 ## A formula fit to plus-minus
 
 ::: {.definition #def:box-formula title="The box formula"}
-Fit plain RAPM, with $\lambda = 3{,}000$ and no prior, to every season
+Fit plain RAPM, with $\lambda = 3{,}000$ and no prior, to the ten seasons
 of segments *before* the one being predicted, with no decay. Then fit two
 linear functions of the eighteen standardized inputs, one to the players'
 offensive ratings and one to their defensive ratings, by ridge
@@ -72,7 +72,10 @@ The formulas are refit once a season, on opening night. Fitting only to
 earlier seasons is essential: a formula fit on this season's ratings
 would have seen the games it predicts, and the walk-forward testing of
 @sec:honesty would flatter it. For 2026, the formula learns from RAPM on
-the fourteen seasons 2012–2025, about 1,750 players.
+the ten seasons 2016–2025, about 1,450 players. Fit to every earlier
+season instead, back to 1997, it predicted 2021–2024 no better, within
+0.002 points of margin RMSE, while the fit that trains it grew every
+year; so it stops at ten.
 
 ![The 2026 box formulas' coefficients, in points per 100 possessions per
 standard deviation of each input: (a) for the offensive rating, (b) for
@@ -83,8 +86,8 @@ time.](figures/box-formula.svg){#fig:box-formula}
 @fig:box-formula shows what the 2026 formula learned, and it reads like a
 scouting report. Offense goes up with points, assists, offensive
 rebounds and high-usage efficient shooting, and down with turnovers.
-Defense goes up with steals, blocks and defensive rebounds, and with
-height. Points *lower* the defensive prior by 2.8 per standard
+Defense goes up with steals, blocks and defensive rebounds. Points
+*lower* the defensive prior by 1.4 per standard
 deviation: other things equal, a high scorer is a worse defender, either
 because offense is where their energy goes or because good defenders who
 also score get credit for it on offense instead.
@@ -106,16 +109,15 @@ second, smaller formula.
 Fit the offensive and defensive priors by ridge regression on height,
 the log of the draft pick and whether the player was undrafted alone,
 using the box formula's estimate of each earlier season's rookies, from
-2011 on, weighted by their possessions.
+1998 on, weighted by their possessions.
 :::
 
 It learns what a scout would expect: in 2026 its defensive prior rises by
-0.40 points per 100 for each standard deviation of height (3.3 inches),
-and its offensive prior falls by 0.32 for each standard deviation of the
+0.32 points per 100 for each standard deviation of height (3.4 inches),
+and its offensive prior falls by 0.29 for each standard deviation of the
 log of the draft pick. On opening night of 2024, Victor Wembanyama, a
-7′4″ first overall pick, had a prior of $-0.9$ on offense and $+1.6$ on
-defense, $+0.6$ in total: about as good a prior as the formula gives
-anyone, and far from where Wembanyama would end up.
+7′4″ first overall pick, had a prior of $-0.9$ on offense and $+1.1$ on
+defense, $+0.2$ in total, far from where Wembanyama would end up.
 
 A player's prior blends the two formulas by how much the box formula
 has to go on: with $n$ decayed possessions, the prior is $n/(n + 500)$
@@ -126,8 +128,8 @@ first few games, rather than jumping on the strength of one.
 ![Victor Wembanyama's rookie season, 2024: total rating (solid) and
 box-score prior (dashed), as of each day. Early on the rating is the
 prior, give or take; as possessions accumulate, it pulls away. Wembanyama
-ended the regular season with 4,400 possessions, a prior of $+1.3$ and a
-rating of $+2.8$.](figures/wembanyama.svg){#fig:wembanyama}
+ended the regular season with 4,400 possessions, a prior of $+0.9$ and a
+rating of $+2.5$.](figures/wembanyama.svg){#fig:wembanyama}
 
 @fig:wembanyama follows Wembanyama through that season, and shows the
 prior and the penalty working together. Through November, with a few
@@ -139,7 +141,7 @@ data, about 4,400 possessions against the penalty's 3,000, has the larger
 say (@thm:shrinkage), and the rating ends about a point and a half above
 the prior.
 
-Two seasons later, the same model's final 2026 rating for Wembanyama was $+9.2$,
+Two seasons later, the same model's final 2026 rating for Wembanyama was $+9.3$,
 second in the league behind Jokić.
 
 ## What the prior is worth
@@ -153,25 +155,25 @@ scale was tuned along with the penalty: anything from 1.0 to 1.3 did
 about equally well, and yarapm uses 1.
 
 The rookie numbers are a good test of the whole idea. In 2026, the first
-overall pick, Cooper Flagg, started from a prior of $-0.3$ and finished
-the season at $+0.4$. The second pick, Dylan Harper, whom we met coming
+overall pick, Cooper Flagg, started from the prior, at $-0.4$, and finished
+the season at $+0.1$. The second pick, Dylan Harper, whom we met coming
 off the Spurs' bench in the Finals in @tbl:first-segments, started from
-$-1.1$ and finished at $+3.8$. The prior was a sensible starting point
+$-0.6$ and finished at $+3.6$. The prior was a sensible starting point
 for both, and the games moved each where they belonged.
 
 ::: code
-The prior is [`BoxPrior`](code:yarapm/prior.py#L203) in
-`yarapm/prior.py`. Its [`train`](code:yarapm/prior.py#L242) method fits
+The prior is [`BoxPrior`](code:yarapm/prior.py#L204) in
+`yarapm/prior.py`. Its [`train`](code:yarapm/prior.py#L243) method fits
 the two formulas when the season changes, from
-[`PlayerRatings.target`](code:yarapm/players.py#L439), the plain RAPM fit
-over every earlier season. [`box_features`](code:yarapm/prior.py#L143)
+[`PlayerRatings.target`](code:yarapm/players.py#L713), the plain RAPM fit
+over the ten seasons before. [`box_features`](code:yarapm/prior.py#L144)
 computes the eighteen inputs, with the steadying constants in
-[`RATES`](code:yarapm/prior.py#L42). Box scores go back to 2010, two
-years further than play-by-play, so the rookie formula has more seasons
-to learn from than the box formula does. Because the box formula learns
-from every earlier season with segments, the ratings of every season
-change when nba_data adds an earlier season of play-by-play, and yarapm
-rebuilds its published history when it does (@ch:history).
+[`RATES`](code:yarapm/prior.py#L43). Box scores and play-by-play both
+go back to 1997. The box formula learns from the last ten seasons
+(`target_seasons`), but the rookie formula learns from every rookie
+since 1998, so the ratings of every season change when nba_data adds an
+earlier season, and yarapm rebuilds its published history when it does
+(@ch:history).
 :::
 
 ## Exercises {.unnumbered}
@@ -190,8 +192,8 @@ RMSE would improve, and why the improvement would be fake.
 :::
 
 ::: {.exercise #exr:usage}
-In standardized units, the offensive formula has $-0.47$ for true
-shooting and $+0.89$ for usage times true shooting above average.
+In standardized units, the offensive formula has $-0.68$ for true
+shooting and $+1.21$ for usage times true shooting above average.
 Consider two players one standard deviation above average in true
 shooting, one who shoots rarely and one who shoots often. Sketch why the
 formula rates the second's efficiency higher. What would happen to the

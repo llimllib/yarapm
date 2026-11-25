@@ -147,8 +147,8 @@ until they play.
 
 Who plays was the weakest part of the model, and the report all but
 closes it. When the harness is allowed to know who actually played,
-the margin RMSE on 2021–2024 is 13.50. Guessing from the pattern
-alone, it's 13.63, and with the injury report, 13.50 again: the report
+the margin RMSE on 2021–2024 is 13.51. Guessing from the pattern
+alone, it's 13.63, and with the injury report, 13.51 again: the report
 recovers almost all of what knowing who plays is worth, which is more
 than the box-score prior.
 
@@ -183,15 +183,15 @@ home against New York, fit on every game through June 12.
 
 | | Spurs | Knicks |
 |:--|--:|--:|
-| league level, $\ell$ | 104.60 | 104.60 |
-| playoff term, $\pi$ | $-4.00$ | $-4.00$ |
+| league level, $\ell$ | 108.19 | 108.19 |
+| playoff term, $\pi$ | $-3.90$ | $-3.90$ |
 | home court, $\pm\eta$ | $+0.92$ | $-0.92$ |
 | back-to-backs, $\rho$ | $0$ | $0$ |
-| own offense, $O$ | $+14.46$ | $+13.61$ |
-| opponent's defense, $-D$ | $-0.02$ | $-4.27$ |
-| points per 100 possessions | 115.96 | 109.01 |
+| own offense, $O$ | $+13.52$ | $+12.77$ |
+| opponent's defense, $-D$ | $-2.80$ | $-7.06$ |
+| points per 100 possessions | 115.94 | 109.07 |
 | expected possessions, $P$ | 96.2 | 96.2 |
-| **expected points** | **111.5** | **104.8** |
+| **expected points** | **111.5** | **104.9** |
 | actual points | 90 | 94 |
 
 Table: The model's prediction of Game 5 of the 2026 Finals, made from
@@ -200,9 +200,9 @@ games before June 13, 2026, built up term by term from
 
 The Spurs' offense rates slightly better than the Knicks', and their
 defense much better: Wembanyama alone, projected for 37 minutes with a
-defensive rating of $+6.0$, contributes $5 \times \tfrac{37.1}{240} \times
-6.0 \approx 4.6$ points per 100 to it. With home court, the model made
-San Antonio a 6.7-point favorite, and a 69% chance to win (@ch:evaluation
+defensive rating of $+6.7$, contributes $5 \times \tfrac{36.9}{240} \times
+6.7 \approx 5.2$ points per 100 to it. With home court, the model made
+San Antonio a 6.6-point favorite, and a 69% chance to win (@ch:evaluation
 explains the conversion).
 
 ::: {.remark #rem:terms}
@@ -216,10 +216,11 @@ changed by a hundredth of a point. This is @prop:singular at work:
 shifting the ratings one way and the level the other predicts the same
 scores, and the data only pins down the combination. Here the prior,
 not the data, decided where the level sits. @tbl:game5 has since been
-refit, after more play-by-play arrived and changes to the model (games
-aged in days of the season, players aging, @sec:aging, and the
-back-to-back terms): the level is 0.8 lower than it was then, and the
-margin 0.4 points wider.
+refit, after play-by-play back to 1997 arrived and changes to the model
+(games aged in days of the season, players aging, @sec:aging, the
+back-to-back terms, the injury report, and a prior fit to the last ten
+seasons): the level is 2.8 higher than it was then, the defenses
+stronger to match, and the margin 0.3 points wider.
 :::
 
 The Knicks won by four. The game was slower than predicted, about 90
@@ -232,7 +233,7 @@ favorites lose as often as the model says they should, and no more.
 The projected minutes are worth a look too. For the Knicks, Brunson was
 projected for 36 minutes and played 41. OG Anunoby, who had missed two
 games of the second round in May and so had played 8 of the Knicks' last
-10, was given an 87% chance of playing rather than 94%, and played 33
+10, was given a 92% chance of playing rather than 98%, and played 33
 minutes. In
 a Finals elimination game, starters play more than their season pattern
 says, which the model doesn't know. Playoff rotations are one of the
@@ -240,8 +241,8 @@ open experiments in the project.
 
 ::: code
 The expected score, @eq:expected-score, is
-[`PlayerRatings.predict`](code:yarapm/players.py#L487), and team
-strength is [`strength`](code:yarapm/players.py#L458), which takes
+[`PlayerRatings.predict`](code:yarapm/players.py#L763), and team
+strength is [`strength`](code:yarapm/players.py#L734), which takes
 each team's projected minutes and normalizes them, so it works with any
 total. Minutes are [`ProjectedMinutes`](code:yarapm/minutes.py#L134):
 minutes when playing are one SQL query with a window function numbering
@@ -270,7 +271,7 @@ team's expected margin fall, at 100 possessions?
 :::
 
 ::: {.exercise #exr:wemby}
-Using @tbl:game5, how much of the Spurs' 6.7-point expected margin came
+Using @tbl:game5, how much of the Spurs' 6.6-point expected margin came
 from home court? From the difference in defense? If Wembanyama had been
 ruled out that morning, and the 37 projected minutes had gone to players
 with an average defensive rating of 0 and offensive rating of $+1$, what

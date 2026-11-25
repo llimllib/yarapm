@@ -59,7 +59,7 @@ S / P$.
 
 Since possessions alternate, the two teams in a game have almost the same
 number of them.^[Not exactly the same: whoever has the ball first in a
-period may also have it last. Over the 2016–2027 seasons, the two teams'
+period may also have it last. Over the 1997–2027 seasons, the two teams'
 counts in a game never differ by more than 4.] Call that number $P$, the
 game's *pace*. Then the score splits into a product:
 
@@ -84,17 +84,22 @@ at 95.4; but Boston had the best offense, 119.5 points per 100
 possessions, so the slow pace wasn't hurting it. The best defense was
 Detroit's, allowing 108.8.
 
-![Pace and efficiency of the league, 2016–2026: (a) possessions per 48
-minutes, per team, and (b) points per 100 possessions. The pace has
-varied by about four possessions a game. Efficiency rose from 105.6 to
-114.5 points per 100 possessions in ten
-seasons.](figures/league.svg){#fig:league}
+![The league, 1997–2026: (a) pace, possessions per 48 minutes, per
+team, (b) efficiency, points per 100 possessions, and (c) three-point
+attempts as a share of all shots. Pace sat near 92 until 2013 and rose
+to 100 by 2019. Efficiency fell to 100.4 in 1999 and has risen to 114.5.
+The share of threes dipped when the line moved back out in
+1998.](figures/league.svg){#fig:league}
 
-@fig:league shows the two factors over the last decade. Pace has been
-steady near 100 possessions a game. Efficiency has risen by nine points
-per 100 possessions, and it moves within a season too, so a model needs a
-sense of how many points the *league* scores right now, apart from how
-good any one team is. We return to this in @ch:time.
+@fig:league shows the two factors over the thirty seasons of
+play-by-play. Pace sat near 92 possessions a game for fifteen years,
+then rose by eight in six seasons, and has been steady near 100 since.
+Efficiency has risen by fourteen points per 100 possessions since 1999,
+nine of them in the last decade, along with the three-point shot, which
+went from one shot in six to more than two in five. Efficiency moves
+within a season too, so a model needs a sense of how many points the
+*league* scores right now, apart from how good any one team is. We
+return to this in @ch:time.
 
 Most of the book is about efficiency, since it's where the teams differ
 most. A typical difference between two teams' efficiencies is several
@@ -138,8 +143,8 @@ and they play in groups of five.
 |:--|--:|--:|
 | home court only | 14.98 | 0.687 |
 | team ratings (`team`) | 13.93 | 0.636 |
-| player ratings, who plays guessed from the injury report | 13.50 | 0.615 |
-| player ratings, who plays known | 13.50 | 0.610 |
+| player ratings, who plays guessed from the injury report | 13.51 | 0.615 |
+| player ratings, who plays known | 13.51 | 0.611 |
 
 Table: How far off each model's predicted margin is, in points (the
 root mean square error, @ch:evaluation), and its log loss on win
@@ -195,7 +200,7 @@ so every query reads `nba.<table>`, and what yarapm builds goes under
 `out/`, one Parquet file per season.
 
 The no-peeking rule is enforced by a class: a model is fit on a
-[`History`](code:yarapm/harness.py#L167), whose every table is filtered to
+[`History`](code:yarapm/harness.py#L182), whose every table is filtered to
 games before the day being predicted, and that's all it can see. Which
 games count at all (regular season, play-in, playoffs and the Cup final,
 but not preseason or the All-Star game) is decided in

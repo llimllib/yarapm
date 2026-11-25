@@ -163,9 +163,9 @@ gains about 1.4 points per 100 possessions more than a 30-year-old, a
 little more of it on offense than on defense, and the gain shrinks
 steadily until the late twenties.
 Panel (b) is what this does to ratings over a summer. The regulars aged
-19 to 23 rose by 0.39 on average between the 2025 Finals and opening
-night, those aged 28 to 31 fell by 0.23, and without aging both groups
-moved by 0.02 or less. The gap between the two groups, 0.62, is about
+19 to 23 rose by 0.43 on average between the 2025 Finals and opening
+night, those aged 28 to 31 fell by 0.14, and without aging both groups
+rose by less than 0.1. The gap between the two groups, 0.57, is about
 half what the curve says, because each rating is still pulled toward a
 box-score prior that doesn't age.
 
@@ -279,16 +279,16 @@ of the previous season, with the playoff term taken out.
 ::: code
 [`decay()`](code:yarapm/fit.py#L6) is one line. The ages, without the
 breaks between seasons, come from
-[`History.age()`](code:yarapm/harness.py#L217). The cutoff at eight half
+[`History.age()`](code:yarapm/harness.py#L232). The cutoff at eight half
 lives is applied in SQL, before any rows are read
-([`lineups()`](code:yarapm/players.py#L179)), so a fit reads only the
+([`lineups()`](code:yarapm/players.py#L194)), so a fit reads only the
 segments that still matter: eight seasons of them, about 570,000 rows.
 The aging columns are
-[`aging_covariates()`](code:yarapm/players.py#L139), from the cubic in
-[`age_basis()`](code:yarapm/players.py#L120) and each player's year of
-birth ([`born()`](code:yarapm/players.py#L130)). The
+[`aging_covariates()`](code:yarapm/players.py#L150), from the cubic in
+[`age_basis()`](code:yarapm/players.py#L131) and each player's year of
+birth ([`born()`](code:yarapm/players.py#L141)). The
 level is computed right after the ratings, in
-[`PlayerRatings.fit`](code:yarapm/players.py#L369), from the same rows
+[`PlayerRatings.fit`](code:yarapm/players.py#L623), from the same rows
 reweighted with the seven-day half life. Because @prop:memoryless makes
 a day's change in the weights a single factor, yesterday's ratings are a
 good starting point for today's solve, which is why each day's fit is

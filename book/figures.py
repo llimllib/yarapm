@@ -279,49 +279,61 @@ def pipeline() -> Svg:
 
 @figure("league")
 def league() -> Svg:
-    """Possessions per game and points per 100 possessions, by season"""
+    """Pace, efficiency and three-point attempts, by season"""
     from yarapm.games import load_results
 
     con = connect()
-    load_results(con, "season BETWEEN 2016 AND 2026")
+    load_results(con, "season BETWEEN 1997 AND 2026")
     rows = con.execute("""
-        SELECT season, avg((poss + opp_poss) / 2 * 48 / min),
-            100 * sum(pts + opp_pts) / sum(poss + opp_poss)
-        FROM results GROUP BY season ORDER BY season
+        WITH threes AS (
+            SELECT l.season, sum(l.fg3a) / sum(l.fga) AS share
+            FROM nba.team_game_logs l
+            WHERE l.season BETWEEN 1997 AND 2026
+                AND l.game_id IN (SELECT game_id FROM results)
+            GROUP BY 1
+        )
+        SELECT r.season, avg((poss + opp_poss) / 2 * 48 / min),
+            100 * sum(pts + opp_pts) / sum(poss + opp_poss), any_value(t.share)
+        FROM results r JOIN threes t USING (season)
+        GROUP BY r.season ORDER BY r.season
     """).fetchall()
     seasons = [r[0] for r in rows]
     pace = [r[1] for r in rows]
     rtg = [r[2] for r in rows]
-    for season, p, r in rows:
+    threes = [100 * r[3] for r in rows]
+    for season, p, r, t in rows:
         print(
-            f"league {season}: {p:.1f} possessions per 48 minutes, {r:.1f} points per 100"
+            f"league {season}: {p:.1f} possessions per 48 minutes, {r:.1f} points per 100, {100 * t:.1f}% of shots threes"
         )
 
     s = Svg(
         640,
         230,
-        "Two line charts by season, 2016 to 2026: possessions per 48 minutes rise from 97 to 100, points per 100 possessions from 106 to 115",
+        "Three line charts by season, 1997 to 2026: possessions per 48 minutes near 92 until 2013, then rising to 100; points per 100 possessions from about 102 to 115; the share of shots that are threes from 16% to 42%",
     )
-    a = Axes(s, 60, 22, 240, 150, (2015.5, 2026.5), (95, 103))
-    a.frame(
-        [2016, 2018, 2020, 2022, 2024, 2026],
-        [95, 97, 99, 101, 103],
-        "season",
-        "possessions per 48 min",
-    )
+    xlim = (1995.5, 2027.5)
+    xticks = [2000, 2010, 2020]
+    a = Axes(s, 55, 22, 145, 150, xlim, (88, 102))
+    a.frame(xticks, [88, 92, 96, 100], "season", "possessions per 48 min")
     a.line(seasons, pace)
-    a.points(seasons, pace)
-    s.text(300, 14, "(a) pace", italic=True, anchor="end", size=12)
-    b = Axes(s, 380, 22, 240, 150, (2015.5, 2026.5), (104, 116))
-    b.frame(
-        [2016, 2018, 2020, 2022, 2024, 2026],
-        [104, 107, 110, 113, 116],
-        "season",
-        "points per 100 possessions",
-    )
+    a.points(seasons, pace, r=1.8)
+    s.text(200, 14, "(a) pace", italic=True, anchor="end", size=12)
+    b = Axes(s, 268, 22, 145, 150, xlim, (98, 116))
+    b.frame(xticks, [98, 104, 110, 116], "season", "points per 100 possessions")
     b.line(seasons, rtg)
-    b.points(seasons, rtg, fill=PAPER, stroke=INK)
-    s.text(620, 14, "(b) efficiency", italic=True, anchor="end", size=12)
+    b.points(seasons, rtg, r=1.8, fill=PAPER, stroke=INK)
+    s.text(413, 14, "(b) efficiency", italic=True, anchor="end", size=12)
+    c = Axes(s, 481, 22, 145, 150, xlim, (10, 45))
+    c.frame(
+        xticks,
+        [10, 20, 30, 40],
+        "season",
+        "threes, % of shots",
+        yfmt=lambda v: f"{v:.0f}%",
+    )
+    c.line(seasons, threes)
+    c.points(seasons, threes, r=1.8)
+    s.text(626, 14, "(c) threes", italic=True, anchor="end", size=12)
     return s
 
 
@@ -982,6 +994,17 @@ def box_formula() -> Svg:
     off, dfn = prior.box.offense[1:], prior.box.defense[1:]
     for n, o, d in zip(names, off, dfn):
         print(f"box formula {n}: offense {o:+.2f}, defense {d:+.2f}")
+    target, seasons = m.target(History(con, opener, 2026))
+    first_box = con.execute("SELECT min(season) FROM player_games").fetchall()[0][0]
+    print(
+        f"box formula target: seasons {min(seasons)}-{max(seasons)}, {len(target.players)} players; box scores from {first_box}"
+    )
+    r = prior.rookie
+    assert r is not None
+    for i, n in enumerate(["height", "log draft pick", "undrafted"]):
+        print(
+            f"rookie formula {n}: offense {r.offense[1 + i]:+.2f}, defense {r.defense[1 + i]:+.2f}, sd {r.scale[i]:.2f}"
+        )
     s = Svg(
         640,
         20 + 17 * len(names) + 40,
@@ -1057,9 +1080,9 @@ def wembanyama() -> Svg:
     s = Svg(
         640,
         240,
-        "Line chart: Wembanyama's rating rose from about +0.5 to +2.9 through his rookie season, pulling away from his box-score prior",
+        "Line chart: Wembanyama's rating fell below -1 in November, then rose to +2.5 by the end of the rookie season, pulling away from the box-score prior",
     )
-    a = Axes(s, 60, 15, 510, 170, (0, 240), (-1, 5))
+    a = Axes(s, 60, 15, 510, 170, (0, 240), (-2, 5))
     months = [
         ("Nov", date(2023, 11, 1)),
         ("Dec", date(2023, 12, 1)),
@@ -1072,7 +1095,7 @@ def wembanyama() -> Svg:
     ]
     a.frame(
         [],
-        [-1, 0, 1, 2, 3, 4, 5],
+        [-2, -1, 0, 1, 2, 3, 4, 5],
         "",
         "points per 100 possessions",
         yfmt=lambda v: f"{v:+.0f}" if v else "0",
@@ -1157,8 +1180,8 @@ def availability_curves() -> Svg:
 # the daily `rapm` run with unknown availability on 2021-2024, the
 # scoreboard's (yarapm.harness --model rapm --cadence daily --set
 # minutes=unknown), with aging (#48), the early-season ridge (#50),
-# back-to-backs (#21), the injury report (#52) and segments from 2010 on
-RUN = ROOT / "out" / "runs" / "predictions" / "run=rapm-3f3b312b" / "data.parquet"
+# back-to-backs (#21), the injury report (#52) and segments from 1997 on
+RUN = ROOT / "out" / "runs" / "predictions" / "run=rapm-f9e188ee" / "data.parquet"
 
 
 def run_errors():
@@ -1270,7 +1293,7 @@ def published():
 
 @figure("george")
 def george() -> Svg:
-    """Paul George's ratings as of each day, 2012 to now"""
+    """Paul George's ratings as of each day, from the first season to now"""
     from datetime import date
 
     con = published()
@@ -1301,12 +1324,12 @@ def george() -> Svg:
         print(
             f"2026 regulars ({least:,}+ possessions), final day: {n}, offense sd {o_sd:.2f}, defense sd {d_sd:.2f}"
         )
-    start, end = date(2013, 10, 1), date(2026, 12, 1)
+    start, end = date(2010, 10, 1), date(2026, 12, 1)
     span = (end - start).days
     s = Svg(
         640,
         270,
-        "Line chart of Paul George's rating from 2012 to 2027: three to five in Indiana, five to six from 2019 to 2024, under +3 since",
+        "Line chart of Paul George's rating from 2011 to 2027: near zero as a rookie, four to five in Indiana, four to six from 2019 to 2024, about +2 since",
     )
     a = Axes(s, 60, 25, 560, 180, (0, span), (-2, 10))
     a.frame(
@@ -1340,7 +1363,7 @@ def george() -> Svg:
                 italic=True,
                 fill=FAINT,
             )
-    s.text(a.x + a.w, a.y + a.h + 34, "season, '14 to '27", italic=True, anchor="end")
+    s.text(a.x + a.w, a.y + a.h + 34, "season, '11 to '27", italic=True, anchor="end")
     lx = a.x + 8
     s.line(lx, 258, lx + 20, 258, width=1.6)
     s.text(lx + 25, 262, "total", size=10.5)

@@ -139,8 +139,9 @@ point of every game, player by player. In 2025–26, 96% of games match
 every player's plus-minus exactly. The rest are off by a point or two
 from free throws on a substitution's tick that the NBA's own numbers
 give to different lineups for different players, which no division into
-segments can match. Of 1,322 games in 2026, 1,321 passed; the
-other was dropped because its rotation data didn't match its box score.
+segments can match. All 1,322 games of 2026 passed. Older seasons lose
+a few: 1999 kept 786 of its 791 games, dropping four whose rotation data
+didn't match their box scores and one whose possessions were off.
 
 ::: code
 The segments are built in SQL, one season at a time, in
@@ -160,10 +161,10 @@ season under `out/segments/`, about 80,000 rows each.
 
 ## What we have
 
-A season of segments is about 80,000 rows: 85,194 in 2026. Each row is a
+A season of segments is about 80,000 rows: 85,266 in 2026. Each row is a
 small experiment. Five offensive players and five defenders shared the
 floor for a few possessions, and the offense scored some number of
-points. In 2026 those rows involved 19,985 different five-man units, so
+points. In 2026 those rows involved 19,991 different five-man units, so
 almost no lineup appears often enough to be rated on its own. What does
 appear often is each *player*, in many different lineups. The next
 chapter turns that into a regression.

@@ -131,7 +131,7 @@ X = \begin{pmatrix}
 \end{pmatrix},
 $$
 and $X\beta$ is the column of the three segments' predicted rates. For
-2026, $X$ has 78,608 rows, one per segment's offense with at least one
+2026, $X$ has 78,671 rows, one per segment's offense with at least one
 possession, and 1,165 columns.
 
 ## Least squares, weighted
@@ -198,7 +198,7 @@ offense. The entry for $o_i$ and $d_j$ is minus the possessions $i$
 played on offense *against* $j$. So $A$ is the season's table of who
 played with and against whom, counted in possessions, and $X^\top W r$
 is the table of points scored by and against each player. In 2026 it
-has 582 players, so $A$ is $1{,}165 \times 1{,}165$, built from 78,608
+has 582 players, so $A$ is $1{,}165 \times 1{,}165$, built from 78,671
 rows with at least one possession.
 
 ## The first problem: shifting ratings {#sec:shift}
@@ -274,7 +274,7 @@ The eigenvalues are measured in possessions. A direction with eigenvalue
 $\lambda$ is estimated about as well as a rating from $\lambda$
 possessions of data, with a standard deviation near $110/\sqrt{\lambda}$
 points per 100. @fig:eigenvalues shows them for 2026. Apart from the two
-zeros, they run from 3.8 to 302,415, a ratio of about 80,000, the
+zeros, they run from 3.8 to 302,634, a ratio of about 80,000, the
 *condition number* of the problem.^[The condition number $\kappa =
 \lambda_{\max}/\lambda_{\min}$ bounds how much a relative change in the
 right-hand side can change the solution: $\|\delta\beta\|/\|\beta\| \le
@@ -302,10 +302,11 @@ points at the edges are off the scale. The spread is enormous for players
 who barely played, and narrows as possessions grow, roughly as $1/\sqrt{n}$.](figures/least-squares.svg){#fig:least-squares}
 
 It's a funnel. Players with over 4,000 possessions have ratings with a
-standard deviation of 5.6, and a basketball fan would recognize the top
-of the list: Nikola Jokić is $+14.0$, Victor Wembanyama $+13.8$, Shai
-Gilgeous-Alexander $+12.9$. But players with under 500 possessions have a
-standard deviation of 25, and the extremes are absurd. Colby Jones, who
+standard deviation of 5.8, and the top of their list is plausible:
+Kawhi Leonard is $+18.2$, Dyson Daniels $+14.8$, Amen Thompson $+14.4$,
+Nikola Jokić $+14.0$, Chet Holmgren $+13.9$, Victor Wembanyama $+13.8$.
+But players with under 500 possessions have a standard deviation of 25,
+and the extremes are absurd. Colby Jones, who
 played 15 offensive possessions all season, is rated $+89.9$: taken at
 face value, any lineup including Jones would outscore its opponents by 90
 points per 100 possessions. Noa Essengue, 14 possessions, is $-116.8$. Nine players are
@@ -324,13 +325,13 @@ average" into the objective.
 ::: code
 The design matrix is sparse: every row has eleven nonzero entries (plus
 one per extra covariate, @ch:ridge), out of more than a thousand columns.
-[`design()`](code:yarapm/rapm.py#L111) builds it in compressed sparse row
+[`design()`](code:yarapm/rapm.py#L118) builds it in compressed sparse row
 form directly from arrays of player indices, without a loop: the column
 indices of row $s$ are its covariates, then its five offensive players,
 then its five defenders offset by $k$. The players are numbered by
-[`Lineups.from_ids`](code:yarapm/rapm.py#L50), which dictionary-encodes
+[`Lineups.from_ids`](code:yarapm/rapm.py#L53), which dictionary-encodes
 the segments' lists of player ids with Arrow. Forming $A = X^\top W X$
-is then a sparse matrix product ([line 165](code:yarapm/rapm.py#L165)).
+is then a sparse matrix product ([`Normal.add`](code:yarapm/rapm.py#L191)).
 :::
 
 ## Exercises {.unnumbered}
